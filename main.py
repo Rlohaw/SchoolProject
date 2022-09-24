@@ -16,9 +16,12 @@ with zipfile.ZipFile(name, mode='r') as zp:  # Открываем зип
         os.system('cls')
 
 
-    def opened_file(key):
-        with zp.open(*(i for i in path if key in i)) as file:
-            return file
+    def read_file(key):
+        try:
+            with zp.open(*(i for i in path if key in i)) as file:
+                return file.read().decode('ANSI')
+        except TypeError as e:
+            return None
 
 
     def time_counter(f):  # Отладка по времени(декоратор)
@@ -31,10 +34,11 @@ with zipfile.ZipFile(name, mode='r') as zp:  # Открываем зип
 
         return wrapper
 
-
+    def print_enumerated_modes(modes):
+        [print(f"{i[0]}: {i[1]}") for i in modes]
     def ads():  # раздел рекламы
         def ads_cord():  # раздел частая геопозиция
-            text = opened_file('geo-points').read().decode('ANSI')
+            text = read_file('geo-points')
             geo = re.search('<a href="(?P<site>.+)">(?P<lat>.+), (?P<lon>.+)</a>', text)
             print(f"Геопозиция на картах:{geo['site']}\n{geo['lat']}\n{geo['lon']}")
 
@@ -45,24 +49,24 @@ with zipfile.ZipFile(name, mode='r') as zp:  # Открываем зип
             def other_segments():
                 print(*d['Сторонний сегмент'], sep='\n')
 
-            def all_interests():
-                print('Пользовательский интерес:')
-                user_interests()
-                print('Сторонний сегмент:')
-                other_segments()
+            def system_segment():
+                print(*d['Системный сегмент'], sep='\n')
 
-            text = opened_file('interests').read().decode('ANSI')
+            def all_interests():
+                user_interests()
+                other_segments()
+                system_segment()
+
+            text = read_file('interests')
             mass = re.findall('''item__main'>([А-яA-z0-9/ -–—,.()]+)</div>|item__tertiary'>([А-я ]+)</div>''', text)
             mass = list(map(lambda x: ''.join(x), mass))
             d = collections.defaultdict(list)
-            [d[mass[i + 1]].append(mass[i]) for i in range(len(mass) - 1)]
+            [d[mass[i + 1]].append(mass[i]) for i in range(0, len(mass), 2)]
 
-            ads_interests_print_modes = list(enumerate(['Пользовательский интерес',
-                                                        'Сторонний сегмент',
-                                                        'Оба варианта']))
-            ads_interests_mode_selectors = {0: user_interests, 1: other_segments, 2: all_interests}
+            ads_interests_print_modes = list(enumerate([*d.keys(), 'Оба варианта']))
+            print_enumerated_modes(ads_interests_print_modes)
 
-            [print(f"{i[0]}: {i[1]}") for i in ads_interests_print_modes]
+            ads_interests_mode_selectors = {0: user_interests, 1: other_segments, 2: system_segment, 3:all_interests}
             ads_interests_mode_selectors[int(input('Выберите класс: '))]()
 
         def ads_all():
@@ -71,16 +75,37 @@ with zipfile.ZipFile(name, mode='r') as zp:  # Открываем зип
             print()
             ads_interests()
 
-        ads_print_mode = list(enumerate(['Координаты',
+        ads_print_modes = list(enumerate(['Координаты',
                                          'Интересы',
                                          'Все режимы']))
-        [print(f"{i[0]}: {i[1]}") for i in ads_print_mode]
         ads_mode_selector = {0: ads_cord, 1: ads_interests, 2: ads_all}
+
+        print_enumerated_modes(ads_print_modes)
         ads_mode_selector[int(input('Выберите режим: '))]()
 
 
     def apps():
-        pass
+        text = re.findall("class='item__main'>([A-zА-я -]+)</div>", read_file('apps'))
+        print(*text, sep='\n')
+
+
+    def audios():
+        def get_albums():
+            text = read_file('audio-albums.html')
+            albums_dict = dict(map(lambda x: reversed(x), re.findall('<a href="(?P<path>.*)">(?P<name>.*)</a>', text)))
+            return albums_dict
+
+        def album_sort():
+            d = collections.defaultdict(set)
+            for name in get_albums().values():
+                if read_file(name):
+                    text = read_file(name)
+                    mass = re.findall('audio__title">(?P<name>.+) &mdash; (?P<artist>.+)</div>', text)
+                    [d[i[0]].update([i[1]]) for i in mass]
+            [print(f"{i[0]}: {', '.join(sorted(i[1]))}") for i in d.items()]
+
+        album_sort()
+
 
 
     ####################################################################################################################
@@ -88,8 +113,6 @@ with zipfile.ZipFile(name, mode='r') as zp:  # Открываем зип
     mask = r'(?:\.\w+)?/.+|^(?:\w+\.\w+)$'
     modes = list(enumerate(sorted(set(re.sub(mask, '', i) for i in path if
                                       re.sub(mask, '', i)))))  # Создаем список папок и проверяем не пустое ли имя
-    dmodes = dict(modes)  # Создаем словарь с папками
-    [print(f"{i[0]}: {i[1]}") for i in modes]
-
-    funcs = {0: ads, 1: apps}
-    funcs[int(input('Выборите данные с которыми хотите работать: '))]()
+    print_enumerated_modes(modes)
+    funcs = {0: ads, 1: apps, 2: audios}
+    funcs[int(input('Выберите данные с которыми хотите работать: '))]()
