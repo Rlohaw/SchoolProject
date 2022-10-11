@@ -1,12 +1,15 @@
 import collections
 import re
 import zipfile
+import datetime
+import locale
 
-
+locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 class Zip:
     def __init__(self, name):
         self.__zip = zipfile.ZipFile(name)
         self.path = tuple((i.filename for i in self.__zip.infolist() if not i.is_dir()))
+        self.directory = name
 
     def __del__(self):
         self.__zip.close()
@@ -110,4 +113,52 @@ class Likes(Zip):
         return self.__likes
 
 
+class Users(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+        self.__messages_users = tuple(self.get_text('index-messages.html').items())
 
+    def get_groups(self):
+        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users if
+                    i[1].startswith('-')])
+        return res
+
+    def get_persons(self):
+        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users if
+                    re.search(r'^(\d{3,9}/)', i[1])])
+        return res
+
+    def get_chats(self):
+        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users if
+                    re.search(r'^(\d{10}/)', i[1])])
+        return res
+
+    def get_every(self):
+        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users])
+        return res
+
+    def get_one(self, person_name):
+        value = self.get_every()[person_name]
+        return {person_name: value}
+
+
+# class Message(Zip):
+#     def __init__(self, name, work_dict):
+#         super().__init__(name)
+#         self.work_dict = work_dict
+#
+#     def __iter__(self):
+#         for i in self.work_dict.values():
+#             num = 0
+#             while rf"messages/{i}/messages{num + 50}.html" in self.path:
+#                 res = self.read_file(rf"messages/{i}/messages{num + 50}.html")
+#                 num += 50
+#                 yield res
+#
+#     def get_words(self):
+#         for i in self
+#
+#
+#
+# test = Message(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_one('Марк Араи'))
+# test.get_wrong_words([])
