@@ -1,20 +1,20 @@
 import collections
+import datetime
 import locale
 import re
 import zipfile
-from time import perf_counter
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
 
 class Zip:
     def __init__(self, name):
-        self.__zip = zipfile.ZipFile(name)
-        self.path = tuple((i.filename for i in self.__zip.infolist() if not i.is_dir()))
+        self.zip = zipfile.ZipFile(name)
+        self.path = tuple((i.filename for i in self.zip.infolist() if not i.is_dir()))
         self.directory = name
 
     def __del__(self):
-        self.__zip.close()
+        self.zip.close()
 
     def get_text(self, key):
         text = self.read_file(key)
@@ -23,7 +23,7 @@ class Zip:
 
     def read_file(self, key):
         try:
-            with self.__zip.open(*(i for i in self.path if key in i)) as file:
+            with self.zip.open(*(i for i in self.path if key in i)) as file:
                 return file.read().decode('ANSI')
         except TypeError:
             pass
@@ -144,7 +144,22 @@ class Users(Zip):
         return {person_name: value}
 
 
-class Message(Zip):
+class Message:
+    def __init__(self, id, name, date, type, link, text):
+        self.id = id
+        self.name = name
+        self.type = type
+        self.link = link
+        self.text = text
+        if 'мая' in date:
+            date = date.replace('мая', 'май')
+        self.date = datetime.datetime.strptime(date, '%d %b %Y в %H:%M:%S')
+
+    def get_info(self):
+        return self.id, self.name, self.type, self.link, self.text, datetime.datetime.strftime(self.date, '%d %m %Y %H:%M:%S')
+
+
+class Messages(Zip):
     def __init__(self, name, work_dict):
         super().__init__(name)
         self.work_dict = work_dict
@@ -155,18 +170,26 @@ class Message(Zip):
             while rf"messages/{i}/messages{num}.html" in self.path:
                 res = self.read_file(rf"messages/{i}/messages{num}.html")
                 num += 50
-                mass = re.findall(
-                    r""">(?:<a href=)?"?(?P<id>[A-z:/\.0-9]+)?(?:">)?(?P<name>(?:\w| )+)(?:</a>)?, (?P<date>[А-я0-9 :]+).*$\n(?:(?:(?:^\s+.*\n){3}.*>(?P<type>[А-я0-9]+).*\n.*href='(?P<link>.*)</a>)|  <div>(?P<text>.+)<div class="kludges">)""",
+                mass = re.finditer(
+                    r"""header">(?:<a href="(?P<id>.+)">)?(?P<name>.+)(?(id)</a>, |, )(?P<date>[А-я0-9 :]+).*\n(?:(?:(?:\s+.*\n){3}.*>(?P<type>[А-я0-9]+).*\n.*href='(?P<link>.*)'>)|  <div>(?P<text>.+)<div class="kludges">)""",
                     res)
-                yield mass
+                mass = list(map(lambda x: Message(*x.groupdict().values()), mass))
+                yield from mass
 
-    def get_words(self):
-        for i in self:
-            res = i
+    def message_get_files(self):
+        for msg in self:
+            if msg.link is not None:
+                yield msg
 
-test = Message(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_every())
-start = perf_counter()
-res = test.get_words()
-end = perf_counter()
-print(end - start)
-# <div class="message__header">(?:<a href=)?"?(?P<id>[A-z:/\.0-9]+)?(?:">)?(?P<name>(?:\w| )+)(?:</a>)?, (?P<date>[А-я0-9 :]+)</div>\n  <div>(?P<text>.+)<div class="kludges">', res)
+    def message_get_text(self):
+        for msg in self:
+            if msg.text is not None:
+                yield msg
+
+    def search_by_words(self, wrong_words):
+        return [sp.get_info() for sp in self.message_get_text() for ww in wrong_words if ww.lower() in sp.text.lower()]
+
+
+test = Messages(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_every())
+mass = ['я тебя люблю']
+print(*test.search_by_words(mass), sep='\n')
