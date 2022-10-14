@@ -1,10 +1,12 @@
 import collections
+import locale
 import re
 import zipfile
-import datetime
-import locale
+from time import perf_counter
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
+
+
 class Zip:
     def __init__(self, name):
         self.__zip = zipfile.ZipFile(name)
@@ -142,23 +144,29 @@ class Users(Zip):
         return {person_name: value}
 
 
-# class Message(Zip):
-#     def __init__(self, name, work_dict):
-#         super().__init__(name)
-#         self.work_dict = work_dict
-#
-#     def __iter__(self):
-#         for i in self.work_dict.values():
-#             num = 0
-#             while rf"messages/{i}/messages{num + 50}.html" in self.path:
-#                 res = self.read_file(rf"messages/{i}/messages{num + 50}.html")
-#                 num += 50
-#                 yield res
-#
-#     def get_words(self):
-#         for i in self
-#
-#
-#
-# test = Message(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_one('Марк Араи'))
-# test.get_wrong_words([])
+class Message(Zip):
+    def __init__(self, name, work_dict):
+        super().__init__(name)
+        self.work_dict = work_dict
+
+    def __iter__(self):
+        for i in self.work_dict.values():
+            num = 0
+            while rf"messages/{i}/messages{num}.html" in self.path:
+                res = self.read_file(rf"messages/{i}/messages{num}.html")
+                num += 50
+                mass = re.findall(
+                    r""">(?:<a href=)?"?(?P<id>[A-z:/\.0-9]+)?(?:">)?(?P<name>(?:\w| )+)(?:</a>)?, (?P<date>[А-я0-9 :]+).*$\n(?:(?:(?:^\s+.*\n){3}.*>(?P<type>[А-я0-9]+).*\n.*href='(?P<link>.*)</a>)|  <div>(?P<text>.+)<div class="kludges">)""",
+                    res)
+                yield mass
+
+    def get_words(self):
+        for i in self:
+            res = i
+
+test = Message(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_every())
+start = perf_counter()
+res = test.get_words()
+end = perf_counter()
+print(end - start)
+# <div class="message__header">(?:<a href=)?"?(?P<id>[A-z:/\.0-9]+)?(?:">)?(?P<name>(?:\w| )+)(?:</a>)?, (?P<date>[А-я0-9 :]+)</div>\n  <div>(?P<text>.+)<div class="kludges">', res)
