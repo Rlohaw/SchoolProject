@@ -3,6 +3,7 @@ import datetime
 import locale
 import re
 import zipfile
+from time import perf_counter
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
@@ -155,8 +156,8 @@ class Message:
             date = date.replace('мая', 'май')
         self.date = datetime.datetime.strptime(date, '%d %b %Y в %H:%M:%S')
 
-    def get_info(self):
-        return self.id, self.name, self.type, self.link, self.text, datetime.datetime.strftime(self.date, '%d %m %Y %H:%M:%S')
+    def get_all(self):
+        return tuple(filter(lambda x: bool(x), self.__dict__.values()))
 
 
 class Messages(Zip):
@@ -176,20 +177,41 @@ class Messages(Zip):
                 mass = list(map(lambda x: Message(*x.groupdict().values()), mass))
                 yield from mass
 
-    def message_get_files(self):
+    def file_messages(self):
         for msg in self:
             if msg.link is not None:
                 yield msg
 
-    def message_get_text(self):
+    def text_messages(self):
         for msg in self:
             if msg.text is not None:
                 yield msg
 
     def search_by_words(self, wrong_words):
-        return [sp.get_info() for sp in self.message_get_text() for ww in wrong_words if ww.lower() in sp.text.lower()]
+        return tuple(
+            sp.get_all() for sp in self.text_messages() for ww in wrong_words if ww.lower() in sp.text.lower())
+
+    def top_words(self, num):
+        res = {}
+        for i in self:
+            if i.text is not None:
+                res[i.text] = res.get(i.text, 0) + 1
+        res = sorted(res.items(), key=lambda x: x[1], reverse=True)[0:num]
+        return res
+
+    def kd(self):
+        m = 0
+        nm = 0
+        for i in self.text_messages():
+            if i.name == 'Вы':
+                m += len(re.findall(r'(\w+)', i.text))
+            else:
+                nm += len(re.findall(r'(\w+)', i.text))
+        return round(m / nm, 2)
 
 
-test = Messages(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_every())
-mass = ['я тебя люблю']
-print(*test.search_by_words(mass), sep='\n')
+test = Messages(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_persons())
+start = perf_counter()
+print(test.kd())
+end = perf_counter()
+print(end - start)
