@@ -3,7 +3,6 @@ import datetime
 import locale
 import re
 import zipfile
-from time import perf_counter
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
@@ -28,6 +27,9 @@ class Zip:
                 return file.read().decode('ANSI')
         except TypeError:
             pass
+
+    def get_paths_by_key(self, key):
+        return [i for i in self.path if key in i]
 
 
 class Coordinates(Zip):
@@ -146,7 +148,7 @@ class Users(Zip):
 
 
 class Message:
-    def __init__(self, id, name, date, type, link, text):
+    def __init__(self, id, name, date, type, link, text, filename):
         self.id = id
         self.name = name
         self.type = type
@@ -155,6 +157,7 @@ class Message:
         if 'мая' in date:
             date = date.replace('мая', 'май')
         self.date = datetime.datetime.strptime(date, '%d %b %Y в %H:%M:%S')
+        self.filename = filename
 
     def get_all(self):
         return tuple(filter(lambda x: bool(x), self.__dict__.values()))
@@ -170,11 +173,12 @@ class Messages(Zip):
             num = 0
             while rf"messages/{i}/messages{num}.html" in self.path:
                 res = self.read_file(rf"messages/{i}/messages{num}.html")
+                filename = rf"messages/{i}/messages{num}.html"
                 num += 50
                 mass = re.finditer(
-                    r"""header">(?:<a href="(?P<id>.+)">)?(?P<name>.+)(?(id)</a>, |, )(?P<date>[А-я0-9 :]+).*\n(?:(?:(?:\s+.*\n){3}.*>(?P<type>[А-я0-9]+).*\n.*href='(?P<link>.*)'>)|  <div>(?P<text>.+)<div class="kludges">)""",
+                    r"""header">(?:<a href="(?P<id>.+)">)?(?P<name>.+)(?(id)</a>, |, )(?P<date>[А-я0-9 :]+).*\n(?:(?:\s+.*\n){3}.*>(?P<type>[А-я0-9]+).*\n.*href='(?P<link>.*)'>| {2}<div>(?P<text>.+)<div class="kludges">)""",
                     res)
-                mass = list(map(lambda x: Message(*x.groupdict().values()), mass))
+                mass = list(map(lambda x: Message(*x.groupdict().values(), filename), mass))
                 yield from mass
 
     def file_messages(self):
@@ -187,11 +191,11 @@ class Messages(Zip):
             if msg.text is not None:
                 yield msg
 
-    def search_by_words(self, wrong_words):
+    def search_by_words(self, words):
         return tuple(
-            sp.get_all() for sp in self.text_messages() for ww in wrong_words if ww.lower() in sp.text.lower())
+            sp.get_all() for sp in self.text_messages() for ww in words if ww.lower() in sp.text.lower())
 
-    def top_words(self, num):
+    def get_top_words(self, num):
         res = {}
         for i in self:
             if i.text is not None:
@@ -199,7 +203,7 @@ class Messages(Zip):
         res = sorted(res.items(), key=lambda x: x[1], reverse=True)[0:num]
         return res
 
-    def kd(self):
+    def get_kd(self):
         m = 0
         nm = 0
         for i in self.text_messages():
@@ -209,9 +213,135 @@ class Messages(Zip):
                 nm += len(re.findall(r'(\w+)', i.text))
         return round(m / nm, 2)
 
+    def get_total_words(self):
+        return sum(len(re.findall(r'(\w+)', i.text)) for i in self.text_messages())
 
-test = Messages(r'D:\sec\archive.zip', Users(r'D:\sec\archive.zip').get_persons())
-start = perf_counter()
-print(test.kd())
-end = perf_counter()
-print(end - start)
+
+class Others(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def get_contacts(self):
+        res = [j for i in self.get_paths_by_key('other/external-contacts/archive') for j in
+               re.findall("'item__main'>(?P<value>.*)</div>", self.read_file(i))]
+        return res
+
+    def get_bans(self):
+        bans = re.findall(r"'item__tertiary'>(?P<value>.*)</div>", self.read_file('bans.html'))
+        for i in range(len(bans)):
+            if 'мая' in bans[i]:
+                bans[i] = bans[i].replace('мая', 'май')
+            bans[i] = datetime.datetime.strptime(bans[i], '%d %b %Y в %H:%M')
+        return bans
+
+
+class Payments(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def get_cards(self):
+        return re.findall("'item__main'>(?P<value>.*)</div>", self.read_file('cards-info'))
+
+    def get_money_transfer(self):
+        mass = re.findall(
+            """'item__main'>(?P<trans>.+)</div><div.+'item__main'>(?P<operator>.+)<.* {2} {2}.+tertiary'>(?P<date>.+)<""",
+            self.read_file('payments-history'))
+        mass = list(map(list, mass))
+        res = {}
+        for i in range(len(mass)):
+            if 'мая' in mass[i][2]:
+                mass[i][2] = mass[i][2].replace('мая', 'май')
+            res[datetime.datetime.strptime(mass[i][2], '%d %b %Y в %H:%M')] = [mass[i][0], mass[i][1]]
+        return res
+
+    def get_votes(self):
+        mass = re.findall(
+            r"""'item__main'>(.+)</div><div.+'item__main'>(.+).*<a href="(.*)" c.*>(.*)</a></div>\n {2}\n {2}.+tertiary'>(.+)<|'item__main'>(.+)</div><div.+'item__main'>(.+)</div>\n {2}\n {2}.+tertiary'>(.+)<""",
+            self.read_file('/votes-history'))
+        res = [list(filter(bool, i)) for i in mass]
+        fin = {}
+        for i in range(len(res)):
+            if 'мая' in res[i][-1]:
+                res[i][-1] = res[i][-1].replace('мая', 'май')
+            res[i][-1] = datetime.datetime.strptime(res[i][-1], '%d %b %Y в %H:%M')
+            fin[res[i][-1]] = res[i][0:-1]
+        return fin
+
+
+class Photos(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def get_photos(self):
+        sp = []
+        for i in self.get_paths_by_key('photos'):
+            sp.extend(re.findall('src="(.+)" ', self.read_file(i)))
+        return list(filter(bool, sp))
+
+
+class Profile(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def get_blacklist(self):
+        sp = {}
+        for i in map(list, re.findall(r"""href="(.+)" .*">(.+)</a></div>\n\s\s\n.*'>(.+)</div>""",
+                                      self.read_file('blacklist'))):
+            if 'мая' in i[2]:
+                i[2] = i[2].replace('мая', 'май')
+            i[2] = datetime.datetime.strptime(i[2], '%d %b %Y в %H:%M')
+            sp[i[0]] = i[1:]
+        return sp
+
+    def get_documents(self):
+        return re.findall('<a href="(.*)"', self.read_file('documents'))
+
+    def get_emails(self):
+        return re.findall(r"main'>(\S+).*</div>", self.read_file('email-changes'))
+
+    def get_requests(self):
+        return re.findall('href="(.+)">(.*)</a><', self.read_file('friends-requests'))
+
+    def get_friends(self):
+        return re.findall('href="(.+)">(.*)</a><', self.read_file('friends0.html'))
+
+    def get_names(self):
+        return {j for i in re.findall("main'>.+имени (.+) на (.+)</div>", self.read_file('name-changes')) for j in i}
+
+    def get_page_info(self):
+        mass = re.findall(
+            r"""">(.+)(?:</div>\s{3}|</div><div>)(?:<div>.*"(.+)" c|<div>(.*)</div>|(.*)<.div>)""",
+            self.read_file('page-info'))
+        return {a: b if b else c if c else d for a, b, c, d in mass if
+                b != 'Данных нет' and c != 'Данных нет' and d != 'Данных нет'}
+
+    def get_phones(self):
+        return {i for i in re.findall(r"main'>.* (\d+).*</div>", self.read_file('phone-changes'))}
+
+    def get_stories(self):
+        return re.findall('href="(.+)">vk', self.read_file('stories'))
+
+    def get_subs(self):
+        return re.findall('href="(.+)">(.*)</a></div>', self.read_file('subscriptions0.html'))
+
+
+class Video(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def get_videos(self):
+        res = []
+        for i in self.get_paths_by_key('video-albums'):
+            res.extend(re.findall('<a href="(.*)">\n', self.read_file(i)))
+        return res
+
+
+class Wall(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def get_wall(self):
+        res = []
+        for i in self.get_paths_by_key('wall'):
+            res.extend(re.findall('<a class="post__link fl_l" href="(.*)">', self.read_file(i)))
+        return res
