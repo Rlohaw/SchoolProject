@@ -1,5 +1,4 @@
 import collections
-import datetime
 import locale
 import re
 import zipfile
@@ -39,7 +38,7 @@ class Coordinates(Zip):
         self.__coordinates = re.search('<a href="(?P<Coodrinates_site>.+)">'
                                        '(?P<latitude>.+), '
                                        '(?P<longitude>.+)</a>',
-                                       text).groupdict()
+                                       text).groups()
 
     def get_coordinates(self):
         return self.__coordinates
@@ -115,7 +114,7 @@ class Likes(Zip):
                 self.__likes[key].extend(mass)
 
     def get_likes(self):
-        return self.__likes
+        return dict(self.__likes)
 
 
 class Users(Zip):
@@ -156,7 +155,7 @@ class Message:
         self.text = text
         if 'мая' in date:
             date = date.replace('мая', 'май')
-        self.date = datetime.datetime.strptime(date, '%d %b %Y в %H:%M:%S')
+        self.date = date
         self.filename = filename
 
     def get_all(self):
@@ -228,10 +227,6 @@ class Others(Zip):
 
     def get_bans(self):
         bans = re.findall(r"'item__tertiary'>(?P<value>.*)</div>", self._read_file('bans.html'))
-        for i in range(len(bans)):
-            if 'мая' in bans[i]:
-                bans[i] = bans[i].replace('мая', 'май')
-            bans[i] = datetime.datetime.strptime(bans[i], '%d %b %Y в %H:%M')
         return bans
 
 
@@ -251,7 +246,7 @@ class Payments(Zip):
         for i in range(len(mass)):
             if 'мая' in mass[i][2]:
                 mass[i][2] = mass[i][2].replace('мая', 'май')
-            res[datetime.datetime.strptime(mass[i][2], '%d %b %Y в %H:%M')] = [mass[i][0], mass[i][1]]
+            res[mass[i][2]] = [mass[i][0], mass[i][1]]
         return res
 
     def get_votes(self):
@@ -263,7 +258,6 @@ class Payments(Zip):
         for i in range(len(res)):
             if 'мая' in res[i][-1]:
                 res[i][-1] = res[i][-1].replace('мая', 'май')
-            res[i][-1] = datetime.datetime.strptime(res[i][-1], '%d %b %Y в %H:%M')
             fin[res[i][-1]] = res[i][0:-1]
         return fin
 
@@ -287,9 +281,6 @@ class Profile(Zip):
         sp = {}
         for i in map(list, re.findall(r"""href="(.+)" .*">(.+)</a></div>\n\s\s\n.*'>(.+)</div>""",
                                       self._read_file('blacklist'))):
-            if 'мая' in i[2]:
-                i[2] = i[2].replace('мая', 'май')
-            i[2] = datetime.datetime.strptime(i[2], '%d %b %Y в %H:%M')
             sp[i[0]] = i[1:]
         return sp
 
