@@ -9,33 +9,33 @@ locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
 class Zip:
     def __init__(self, name):
-        self.zip = zipfile.ZipFile(name)
-        self.path = tuple((i.filename for i in self.zip.infolist() if not i.is_dir()))
-        self.directory = name
+        self.__zip = zipfile.ZipFile(name)
+        self._path = tuple((i.filename for i in self.__zip.infolist() if not i.is_dir()))
+        self.__directory = name
 
     def __del__(self):
-        self.zip.close()
+        self.__zip.close()
 
-    def get_text(self, key):
-        text = self.read_file(key)
+    def _get_text(self, key):
+        text = self._read_file(key)
         text_dict = dict(map(lambda x: reversed(x), re.findall('<a href="(.*)">(.*)</a>', text)))
         return text_dict
 
-    def read_file(self, key):
+    def _read_file(self, key):
         try:
-            with self.zip.open(*(i for i in self.path if key in i)) as file:
+            with self.__zip.open(*(i for i in self._path if key in i)) as file:
                 return file.read().decode('ANSI')
         except TypeError:
             pass
 
-    def get_paths_by_key(self, key):
-        return [i for i in self.path if key in i]
+    def _get_paths_by_key(self, key):
+        return [i for i in self._path if key in i]
 
 
 class Coordinates(Zip):
     def __init__(self, name):
         super().__init__(name)
-        text = self.read_file('geo-points')
+        text = self._read_file('geo-points')
         self.__coordinates = re.search('<a href="(?P<Coodrinates_site>.+)">'
                                        '(?P<latitude>.+), '
                                        '(?P<longitude>.+)</a>',
@@ -48,7 +48,7 @@ class Coordinates(Zip):
 class Ads(Zip):
     def __init__(self, name):
         super().__init__(name)
-        text = self.read_file('interests')
+        text = self._read_file('interests')
         mass = re.findall('''item__main'>(.+)</div>|item__tertiary'>(.+)</div>''', text)
         mass = list(map(lambda x: ''.join(x), mass))
         self.__ads = collections.defaultdict(list)
@@ -70,7 +70,7 @@ class Ads(Zip):
 class Apps(Zip):
     def __init__(self, name):
         super().__init__(name)
-        self.__apps = re.findall("class='item__main'>(.+)</div>", self.read_file('apps'))
+        self.__apps = re.findall("class='item__main'>(.+)</div>", self._read_file('apps'))
 
     def get_apps(self):
         return self.__apps
@@ -80,9 +80,9 @@ class Audios(Zip):
     def __init__(self, name):
         super().__init__(name)
         self.__audios = collections.defaultdict(set)
-        for nam in self.get_text('audio-albums.html').values():
-            if self.read_file(nam):
-                text = self.read_file(nam)
+        for nam in self._get_text('audio-albums.html').values():
+            if self._read_file(nam):
+                text = self._read_file(nam)
                 mass = re.findall('audio__title">(?P<name>.+) &mdash; (?P<artist>.+)</div>', text)
                 [self.__audios[i[0]].update([i[1]]) for i in mass]
 
@@ -94,9 +94,9 @@ class Bookmarks(Zip):
     def __init__(self, name):
         super().__init__(name)
         self.__bookmarks = collections.defaultdict(set)
-        for nam in self.get_text('audio-albums.html').values():
-            if self.read_file(nam):
-                text = self.read_file(nam)
+        for nam in self._get_text('audio-albums.html').values():
+            if self._read_file(nam):
+                text = self._read_file(nam)
                 mass = re.findall('audio__title">(?P<name>.+) &mdash; (?P<artist>.+)</div>', text)
                 [self.__bookmarks[i[0]].update([i[1]]) for i in mass]
 
@@ -108,9 +108,9 @@ class Likes(Zip):
     def __init__(self, name):
         super().__init__(name)
         self.__likes = collections.defaultdict(list)
-        for key, nam in self.get_text('likes.html').items():
-            if self.read_file(nam):
-                text = self.read_file(nam)
+        for key, nam in self._get_text('likes.html').items():
+            if self._read_file(nam):
+                text = self._read_file(nam)
                 mass = re.findall('<a href="(.*)">', text)
                 self.__likes[key].extend(mass)
 
@@ -121,7 +121,7 @@ class Likes(Zip):
 class Users(Zip):
     def __init__(self, name):
         super().__init__(name)
-        self.__messages_users = tuple(self.get_text('index-messages.html').items())
+        self.__messages_users = tuple(self._get_text('index-messages.html').items())
 
     def get_groups(self):
         res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users if
@@ -171,8 +171,8 @@ class Messages(Zip):
     def __iter__(self):
         for i in self.work_dict.values():
             num = 0
-            while rf"messages/{i}/messages{num}.html" in self.path:
-                res = self.read_file(rf"messages/{i}/messages{num}.html")
+            while rf"messages/{i}/messages{num}.html" in self._path:
+                res = self._read_file(rf"messages/{i}/messages{num}.html")
                 filename = rf"messages/{i}/messages{num}.html"
                 num += 50
                 mass = re.finditer(
@@ -195,12 +195,12 @@ class Messages(Zip):
         return tuple(
             sp.get_all() for sp in self.text_messages() for ww in words if ww.lower() in sp.text.lower())
 
-    def get_top_words(self, num):
+    def get_top_words(self):
         res = {}
         for i in self:
             if i.text is not None:
                 res[i.text] = res.get(i.text, 0) + 1
-        res = sorted(res.items(), key=lambda x: x[1], reverse=True)[0:num]
+        res = sorted(res.items(), key=lambda x: x[1], reverse=True)
         return res
 
     def get_kd(self):
@@ -222,12 +222,12 @@ class Others(Zip):
         super().__init__(name)
 
     def get_contacts(self):
-        res = [j for i in self.get_paths_by_key('other/external-contacts/archive') for j in
-               re.findall("'item__main'>(?P<value>.*)</div>", self.read_file(i))]
+        res = [j for i in self._get_paths_by_key('other/external-contacts/archive') for j in
+               re.findall("'item__main'>(?P<value>.*)</div>", self._read_file(i))]
         return res
 
     def get_bans(self):
-        bans = re.findall(r"'item__tertiary'>(?P<value>.*)</div>", self.read_file('bans.html'))
+        bans = re.findall(r"'item__tertiary'>(?P<value>.*)</div>", self._read_file('bans.html'))
         for i in range(len(bans)):
             if 'мая' in bans[i]:
                 bans[i] = bans[i].replace('мая', 'май')
@@ -240,12 +240,12 @@ class Payments(Zip):
         super().__init__(name)
 
     def get_cards(self):
-        return re.findall("'item__main'>(?P<value>.*)</div>", self.read_file('cards-info'))
+        return re.findall("'item__main'>(?P<value>.*)</div>", self._read_file('cards-info'))
 
     def get_money_transfer(self):
         mass = re.findall(
             """'item__main'>(?P<trans>.+)</div><div.+'item__main'>(?P<operator>.+)<.* {2} {2}.+tertiary'>(?P<date>.+)<""",
-            self.read_file('payments-history'))
+            self._read_file('payments-history'))
         mass = list(map(list, mass))
         res = {}
         for i in range(len(mass)):
@@ -257,7 +257,7 @@ class Payments(Zip):
     def get_votes(self):
         mass = re.findall(
             r"""'item__main'>(.+)</div><div.+'item__main'>(.+).*<a href="(.*)" c.*>(.*)</a></div>\n {2}\n {2}.+tertiary'>(.+)<|'item__main'>(.+)</div><div.+'item__main'>(.+)</div>\n {2}\n {2}.+tertiary'>(.+)<""",
-            self.read_file('/votes-history'))
+            self._read_file('/votes-history'))
         res = [list(filter(bool, i)) for i in mass]
         fin = {}
         for i in range(len(res)):
@@ -274,8 +274,8 @@ class Photos(Zip):
 
     def get_photos(self):
         sp = []
-        for i in self.get_paths_by_key('photos'):
-            sp.extend(re.findall('src="(.+)" ', self.read_file(i)))
+        for i in self._get_paths_by_key('photos'):
+            sp.extend(re.findall('src="(.+)" ', self._read_file(i)))
         return list(filter(bool, sp))
 
 
@@ -286,7 +286,7 @@ class Profile(Zip):
     def get_blacklist(self):
         sp = {}
         for i in map(list, re.findall(r"""href="(.+)" .*">(.+)</a></div>\n\s\s\n.*'>(.+)</div>""",
-                                      self.read_file('blacklist'))):
+                                      self._read_file('blacklist'))):
             if 'мая' in i[2]:
                 i[2] = i[2].replace('мая', 'май')
             i[2] = datetime.datetime.strptime(i[2], '%d %b %Y в %H:%M')
@@ -294,35 +294,35 @@ class Profile(Zip):
         return sp
 
     def get_documents(self):
-        return re.findall('<a href="(.*)"', self.read_file('documents'))
+        return re.findall('<a href="(.*)"', self._read_file('documents'))
 
     def get_emails(self):
-        return re.findall(r"main'>(\S+).*</div>", self.read_file('email-changes'))
+        return re.findall(r"main'>(\S+).*</div>", self._read_file('email-changes'))
 
     def get_requests(self):
-        return re.findall('href="(.+)">(.*)</a><', self.read_file('friends-requests'))
+        return re.findall('href="(.+)">(.*)</a><', self._read_file('friends-requests'))
 
     def get_friends(self):
-        return re.findall('href="(.+)">(.*)</a><', self.read_file('friends0.html'))
+        return re.findall('href="(.+)">(.*)</a><', self._read_file('friends0.html'))
 
     def get_names(self):
-        return {j for i in re.findall("main'>.+имени (.+) на (.+)</div>", self.read_file('name-changes')) for j in i}
+        return {j for i in re.findall("main'>.+имени (.+) на (.+)</div>", self._read_file('name-changes')) for j in i}
 
     def get_page_info(self):
         mass = re.findall(
             r"""">(.+)(?:</div>\s{3}|</div><div>)(?:<div>.*"(.+)" c|<div>(.*)</div>|(.*)<.div>)""",
-            self.read_file('page-info'))
+            self._read_file('page-info'))
         return {a: b if b else c if c else d for a, b, c, d in mass if
                 b != 'Данных нет' and c != 'Данных нет' and d != 'Данных нет'}
 
     def get_phones(self):
-        return {i for i in re.findall(r"main'>.* (\d+).*</div>", self.read_file('phone-changes'))}
+        return {i for i in re.findall(r"main'>.* (\d+).*</div>", self._read_file('phone-changes'))}
 
     def get_stories(self):
-        return re.findall('href="(.+)">vk', self.read_file('stories'))
+        return re.findall('href="(.+)">vk', self._read_file('stories'))
 
     def get_subs(self):
-        return re.findall('href="(.+)">(.*)</a></div>', self.read_file('subscriptions0.html'))
+        return re.findall('href="(.+)">(.*)</a></div>', self._read_file('subscriptions0.html'))
 
 
 class Video(Zip):
@@ -331,8 +331,8 @@ class Video(Zip):
 
     def get_videos(self):
         res = []
-        for i in self.get_paths_by_key('video-albums'):
-            res.extend(re.findall('<a href="(.*)">\n', self.read_file(i)))
+        for i in self._get_paths_by_key('video-albums'):
+            res.extend(re.findall('<a href="(.*)">\n', self._read_file(i)))
         return res
 
 
@@ -342,6 +342,6 @@ class Wall(Zip):
 
     def get_wall(self):
         res = []
-        for i in self.get_paths_by_key('wall'):
-            res.extend(re.findall('<a class="post__link fl_l" href="(.*)">', self.read_file(i)))
+        for i in self._get_paths_by_key('wall'):
+            res.extend(re.findall('<a class="post__link fl_l" href="(.*)">', self._read_file(i)))
         return res
