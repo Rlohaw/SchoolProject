@@ -91,20 +91,6 @@ class Audios(Zip):
         return dict(self.__audios)
 
 
-class Bookmarks(Zip):
-    def __init__(self, name):
-        super().__init__(name)
-        self.__bookmarks = collections.defaultdict(set)
-        for nam in self._get_text('audio-albums.html').values():
-            if self._read_file(nam):
-                text = self._read_file(nam)
-                mass = re.findall('audio__title">(?P<name>.+) &mdash; (?P<artist>.+)</div>', text)
-                [self.__bookmarks[i[0]].update([i[1]]) for i in mass]
-
-    def get_bookmarks(self):
-        return self.__bookmarks
-
-
 class Likes(Zip):
     def __init__(self, name):
         super().__init__(name)
@@ -182,32 +168,33 @@ class Messages(Zip):
                 mass = list(map(lambda x: Message(*x.groupdict().values(), filename), mass))
                 yield from mass
 
-    def file_messages(self):
+    def _file_messages(self):
         for msg in self:
             if msg.link is not None:
                 yield msg
 
-    def text_messages(self):
+    def _text_messages(self):
         for msg in self:
             if msg.text is not None:
                 yield msg
 
     def search_by_words(self, words):
         return tuple(
-            sp.get_all() for sp in self.text_messages() for ww in words if ww.lower() in sp.text.lower())
+            sp.get_all() for sp in self._text_messages() for ww in words if ww.lower() in sp.text.lower())
 
     def get_top_words(self):
         res = {}
         for i in self:
             if i.text is not None:
-                res[i.text] = res.get(i.text, 0) + 1
+                for word in re.findall(r'(\w+)', i.text):
+                    res[word] = res.get(word, 0) + 1
         res = sorted(res.items(), key=lambda x: x[1], reverse=True)
         return res
 
     def get_kd(self):
         m = 0
         nm = 0
-        for i in self.text_messages():
+        for i in self._text_messages():
             if i.name == 'Вы':
                 m += len(re.findall(r'(\w+)', i.text))
             else:
@@ -215,7 +202,7 @@ class Messages(Zip):
         return round(m / nm, 2)
 
     def get_total_words(self):
-        return sum(len(re.findall(r'(\w+)', i.text)) for i in self.text_messages())
+        return sum(len(re.findall(r'(\w+)', i.text)) for i in self._text_messages())
 
 
 class Others(Zip):
@@ -241,7 +228,7 @@ class Payments(Zip):
 
     def get_money_transfer(self):
         mass = re.findall(
-            """'item__main'>(?P<trans>.+)</div><div.+'item__main'>(?P<operator>.+)<.* {2} {2}.+tertiary'>(?P<date>.+)<""",
+            """'item__main'>(?P<trans>.+)</div><div.+'item__main'>(?P<operator>.+)<.*\s\s\s\s.+tertiary'>(?P<date>.+)<""",
             self._read_file('payments-history'))
         mass = list(map(list, mass))
         res = {}

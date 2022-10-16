@@ -9,11 +9,19 @@ while True:
     else:
         res = a.msg()
     if choise == 'y':
-        print(res)
+        if isinstance(res, (list, tuple, set)):
+            print('\n'.join(map(lambda x: ', '.join(map(str, x)) if not isinstance(x, str) else x, res)))
+        elif isinstance(res, (int, float)):
+            print(str(res))
+        else:
+            fin = [f"{i}: {', '.join(map(str, res[i])) if not isinstance(i, str) else res[i]}" for i in res]
+            print('\n'.join(fin))
     w = r'(\w+)'
     with open(f"archive-{re.findall(rf'{w}.zip', zip_path)[0]}.txt", 'w', encoding='ANSI') as file:
-        if not isinstance(res, dict):
-            file.writelines('\n'.join(map(lambda x: ', '.join(x) if not isinstance(x, str) else x, res)))
+        if isinstance(res, (list, tuple, set)):
+            file.writelines('\n'.join(map(lambda x: ', '.join(map(str, x)) if not isinstance(x, str) else x, res)))
+        elif isinstance(res, (int, float)):
+            file.write(str(res))
         else:
-            fin = [f"{i}: {', '.join(res[i])}" for i in res]
+            fin = [f"{i}: {', '.join(map(str, res[i])) if not isinstance(i, str) else res[i]}" for i in res]
             file.writelines('\n'.join(fin))

@@ -3,7 +3,7 @@ from skelet import *
 
 class ZipControl:
     __categories = dict(
-        enumerate((Coordinates, Ads, Apps, Audios, Bookmarks, Likes, Users, Messages, Others, Payments, Photos,
+        enumerate((Coordinates, Ads, Apps, Audios, Likes, Users, Messages, Others, Payments, Photos,
                    Profile, Video, Wall)))
 
     def __init__(self, zip_path):
@@ -27,7 +27,7 @@ class ZipControl:
             exemplar = self.category(self.zip_path, getattr(Users(self.zip_path), selected_users)())
             selected_mode = mode_dct[int(input("Выберите режим: "))]
             if selected_mode != 'search_by_words':
-                return getattr(exemplar, selected_mode)
+                return getattr(exemplar, selected_mode)()
             else:
                 return getattr(exemplar, selected_mode)(input('Ведите фрагмент текста: ').split())
         else:
