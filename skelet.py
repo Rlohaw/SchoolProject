@@ -84,9 +84,11 @@ class Audios(Zip):
                 text = self._read_file(nam)
                 mass = re.findall('audio__title">(?P<name>.+) &mdash; (?P<artist>.+)</div>', text)
                 [self.__audios[i[0]].update([i[1]]) for i in mass]
+        for i in self.__audios:
+            self.__audios[i] = list(self.__audios[i])
 
     def get_audios(self):
-        return self.__audios
+        return dict(self.__audios)
 
 
 class Bookmarks(Zip):
