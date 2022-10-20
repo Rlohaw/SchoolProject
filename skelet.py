@@ -315,13 +315,16 @@ class Profile(Zip):
             try:
                 with open(filepath_or_name, encoding='utf-8') as file:
                     file = [i.strip().lower() for i in file.readlines()]
-                    return [i for j in file for i in
-                            re.findall('href="(.+)">(.*)</a></div>', self._read_file('subscriptions0.html'))
-                            if j in i[1].lower()]
+                    return [i.groupdict() for j in file for i in
+                            re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>',
+                                        self._read_file('subscriptions0.html'))
+                            if j in i.groupdict()['Name'].lower()]
             except FileNotFoundError:
-                return [i for i in re.findall('href="(.+)">(.*)</a></div>', self._read_file('subscriptions0.html')) if
-                        filepath_or_name in i[1]]
-        return re.findall('href="(.+)">(.*)</a></div>', self._read_file('subscriptions0.html'))
+                return [i.groupdict() for i in
+                        re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
+                        if
+                        filepath_or_name.lower() in i.groupdict()['Name'].lower()]
+        return re.findall('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
 
 
 class Wall(Zip):
@@ -331,9 +334,6 @@ class Wall(Zip):
     def get_wall(self):
         res = []
         for i in self._get_paths_by_key('wall'):
-            res.extend(re.findall('<a class="post__link fl_l" href="(.*)">', self._read_file(i)))
+            res.extend([i.groupdict() for i in
+                        re.finditer('<a class="post__link fl_l" href="(?P<Url>.*)">', self._read_file(i))])
         return res
-
-
-test = Profile(r'D:\sec\archive.zip')
-print(test.get_phones())
