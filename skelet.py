@@ -32,7 +32,7 @@ class Zip:
         return [i for i in self._path if key in i]
 
     @staticmethod
-    def date_corrector(mass):
+    def _date_corrector(mass):
         res = []
         for i in mass:
             ex = i.groupdict()
@@ -236,7 +236,7 @@ class Payments(Zip):
         mass = re.finditer(
             r"""'item__main'>(?P<Transaction>.+)</div><div.+'item__main'>(?P<Operator>.+)<.*\s{4}.+tertiary'>(?P<Date>.+)<""",
             self._read_file('payments-history'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_votes(self):
         mass = re.finditer(
@@ -274,7 +274,7 @@ class Profile(Zip):
     def get_blacklist(self):
         mass = re.finditer(r"""href="(?P<Id>.+)" .*">(?P<Name>.+)</a></div>\n\s\s\n.*'>(?P<Date>.+)</div>""",
                            self._read_file('blacklist'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_documents(self):
         return [i.groupdict() for i in re.finditer('<a href="(?P<Document>.*)"', self._read_file('documents'))]
@@ -294,7 +294,7 @@ class Profile(Zip):
         mass = re.finditer(
             r"""main'>(?P<Result>\w+).+имени (?P<Prev>\w+ \w+) на (?P<Next>\w+ \w+)</div>\s+.+>(?P<Date>.+)</div>""",
             self._read_file('name-changes'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_page_info(self):
         mass = re.finditer(
@@ -305,7 +305,7 @@ class Profile(Zip):
     def get_phones(self):
         mass = re.finditer(r"main'>(?P<Result>\w+).+(?P<Number>\d{11}).+\n\s+.+'>(?P<Date>.+)</div>",
                            self._read_file('phone-changes'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_stories(self):
         return re.findall('href="(.+)">vk', self._read_file('stories'))
