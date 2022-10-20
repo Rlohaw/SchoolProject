@@ -1,4 +1,5 @@
 import collections
+import datetime
 import locale
 import re
 import zipfile
@@ -30,79 +31,85 @@ class Zip:
     def _get_paths_by_key(self, key):
         return [i for i in self._path if key in i]
 
+    @staticmethod
+    def date_corrector(mass):
+        res = []
+        for i in mass:
+            ex = i.groupdict()
+            if 'мая' in ex['Date']:
+                ex['Date'] = ex['Date'].replace('мая', 'май')
+            res.append(ex)
+        return sorted(res, key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M'))
+
 
 class Coordinates(Zip):
     def __init__(self, name):
         super().__init__(name)
-        text = self._read_file('geo-points')
-        self.__coordinates = re.search('<a href="(?P<Coodrinates_site>.+)">'
-                                       '(?P<latitude>.+), '
-                                       '(?P<longitude>.+)</a>',
-                                       text).groups()
 
     def get_coordinates(self):
-        return self.__coordinates
+        text = self._read_file('geo-points')
+        coordinates = re.search('<a href="(?P<Coodrinates_site>.+)">'
+                                '(?P<Latitude>.+), '
+                                '(?P<Longitude>.+)</a>',
+                                text).groupdict()
+        return coordinates
 
 
 class Ads(Zip):
     def __init__(self, name):
         super().__init__(name)
-        text = self._read_file('interests')
-        mass = re.findall('''item__main'>(.+)</div>|item__tertiary'>(.+)</div>''', text)
-        mass = list(map(lambda x: ''.join(x), mass))
-        self.__ads = collections.defaultdict(list)
-        [self.__ads[mass[i + 1]].append(mass[i]) for i in range(0, len(mass), 2)]
 
     def get_ads_personal_interest(self):
-        return self.__ads['Пользовательский интерес']
+        return list(filter(lambda x: x['Type'] == 'Пользовательский интерес', self.get_ads()))
 
     def get_ads_system(self):
-        return self.__ads['Системный сегмент']
+        return list(filter(lambda x: x['Type'] == 'Системный сегмент', self.get_ads()))
 
     def get_ads_other(self):
-        return self.__ads['Сторонний сегмент']
+        return list(filter(lambda x: x['Type'] == 'Сторонний сегмент', self.get_ads()))
 
     def get_ads(self):
-        return self.get_ads_personal_interest() + self.get_ads_system() + self.get_ads_other()
+        text = self._read_file('interests')
+        mass = re.finditer(r''''item__main'>(?P<Interest>.+)</div>\s+.+'item__tertiary'>(?P<Type>.+)</div>''', text)
+        dct = [i.groupdict() for i in mass]
+        return dct
 
 
 class Apps(Zip):
     def __init__(self, name):
         super().__init__(name)
-        self.__apps = re.findall("class='item__main'>(.+)</div>", self._read_file('apps'))
 
     def get_apps(self):
-        return self.__apps
+        mass = re.finditer("class='item__main'>(?P<App>.+)</div>", self._read_file('apps'))
+        return sorted([i.groupdict() for i in mass], key=lambda x: x['App'])
 
 
 class Audios(Zip):
     def __init__(self, name):
         super().__init__(name)
-        self.__audios = collections.defaultdict(set)
+
+    def get_audios(self):
+        audios = []
         for nam in self._get_text('audio-albums.html').values():
             if self._read_file(nam):
                 text = self._read_file(nam)
-                mass = re.findall('audio__title">(?P<name>.+) &mdash; (?P<artist>.+)</div>', text)
-                [self.__audios[i[0]].update([i[1]]) for i in mass]
-        for i in self.__audios:
-            self.__audios[i] = list(self.__audios[i])
-
-    def get_audios(self):
-        return dict(self.__audios)
+                mass = re.finditer('audio__title">(?P<Name>.+) &mdash; (?P<Artist>.+)</div>', text)
+                [audios.append(i.groupdict()) for i in mass if i.groupdict() not in audios]
+        return sorted(audios, key=lambda x: x['Artist'])
 
 
 class Likes(Zip):
     def __init__(self, name):
         super().__init__(name)
-        self.__likes = collections.defaultdict(list)
+
+    def get_likes(self):
+        likes = []
         for key, nam in self._get_text('likes.html').items():
             if self._read_file(nam):
                 text = self._read_file(nam)
                 mass = re.findall('<a href="(.*)">', text)
-                self.__likes[key].extend(mass)
-
-    def get_likes(self):
-        return dict(self.__likes)
+                [likes.append({'Type': key, 'Url': i}) for i in mass]
+        return sorted(likes, key=lambda x: x['Type'])
 
 
 class Users(Zip):
@@ -134,22 +141,6 @@ class Users(Zip):
         return {person_name: value}
 
 
-class Message:
-    def __init__(self, id, name, date, type, link, text, filename):
-        self.id = id
-        self.name = name
-        self.type = type
-        self.link = link
-        self.text = text
-        if 'мая' in date:
-            date = date.replace('мая', 'май')
-        self.date = date
-        self.filename = filename
-
-    def get_all(self):
-        return tuple(filter(lambda x: bool(x), self.__dict__.values()))
-
-
 class Messages(Zip):
     def __init__(self, name, work_dict):
         super().__init__(name)
@@ -160,49 +151,63 @@ class Messages(Zip):
             num = 0
             while rf"messages/{i}/messages{num}.html" in self._path:
                 res = self._read_file(rf"messages/{i}/messages{num}.html")
-                filename = rf"messages/{i}/messages{num}.html"
                 num += 50
                 mass = re.finditer(
-                    r"""header">(?:<a href="(?P<id>.+)">)?(?P<name>.+)(?(id)</a>, |, )(?P<date>[А-я0-9 :]+).*\n(?:(?:\s+.*\n){3}.*>(?P<type>[А-я0-9]+).*\n.*href='(?P<link>.*)'>| {2}<div>(?P<text>.+)<div class="kludges">)""",
+                    r"""header">(?:<a href="(?P<Id>.+)">)?(?P<Name>.+)(?(Id)</a>, |, )(?P<Date>[А-я0-9 :]+).*\n(?:(?:\s+.*\n){3}.*>(?P<Type>[А-я0-9]+).*\n.*href='(?P<Link>.*)'>| {2}<div>(?P<Text>.+)<div class="kludges">)""",
                     res)
-                mass = list(map(lambda x: Message(*x.groupdict().values(), filename), mass))
                 yield from mass
 
     def _file_messages(self):
         for msg in self:
-            if msg.link is not None:
-                yield msg
+            if msg.groupdict()['Link'] is not None:
+                ex = msg.groupdict()
+                ex['Text'] = ex['Text'].replace('<br>', '')
+                if 'мая' in ex['Date']:
+                    ex['Date'] = ex['Date'].replace('мая', 'май')
+                    yield ex
+                else:
+                    yield ex
 
     def _text_messages(self):
         for msg in self:
-            if msg.text is not None:
-                yield msg
+            if msg.groupdict()['Text'] is not None:
+                ex = msg.groupdict()
+                ex['Text'] = ex['Text'].replace('<br>', '')
+                if 'мая' in ex['Date']:
+                    ex['Date'] = ex['Date'].replace('мая', 'май')
+                    yield ex
+                else:
+                    yield ex
 
-    def search_by_words(self, words):
-        return tuple(
-            sp.get_all() for sp in self._text_messages() for ww in words if ww.lower() in sp.text.lower())
+    def search_by_words(self, words_or_file):
+        try:
+            with open(words_or_file, encoding='utf-8') as file:
+                file = [i.strip().lower() for i in file.readlines()]
+                return sorted([sp for sp in self._text_messages() for ww in file if ww.lower() in sp['Text'].lower()],
+                              key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
+        except FileNotFoundError:
+            mass = words_or_file.split()
+            return sorted([sp for sp in self._text_messages() for ww in mass if ww.lower() in sp['Text'].lower()],
+                          key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
 
     def get_top_words(self):
-        res = {}
-        for i in self:
-            if i.text is not None:
-                for word in re.findall(r'(\w+)', i.text):
-                    res[word] = res.get(word, 0) + 1
-        res = sorted(res.items(), key=lambda x: x[1], reverse=True)
-        return res
+        res = collections.Counter(
+            w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text']))
+        return [{'Word': key, 'Count': value} for key, value in res.items()]
 
     def get_kd(self):
         m = 0
         nm = 0
         for i in self._text_messages():
-            if i.name == 'Вы':
-                m += len(re.findall(r'(\w+)', i.text))
+            if i['Name'] == 'Вы':
+                m += len(re.findall(r'(\w+)', i['Text']))
             else:
-                nm += len(re.findall(r'(\w+)', i.text))
-        return round(m / nm, 2)
+                nm += len(re.findall(r'(\w+)', i['Text']))
+        return {'Kd': round(m / nm, 2)}
 
     def get_total_words(self):
-        return sum(len(re.findall(r'(\w+)', i.text)) for i in self._text_messages())
+        return {'Words': collections.Counter(
+            w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text'])).total()}
 
 
 class Others(Zip):
@@ -210,13 +215,13 @@ class Others(Zip):
         super().__init__(name)
 
     def get_contacts(self):
-        res = [j for i in self._get_paths_by_key('other/external-contacts/archive') for j in
-               re.findall("'item__main'>(?P<value>.*)</div>", self._read_file(i))]
+        res = [{'Number': j} for i in self._get_paths_by_key('other/external-contacts/archive') for j in
+               re.findall("'item__main'>(.*)</div>", self._read_file(i))]
         return res
 
     def get_bans(self):
-        bans = re.findall(r"'item__tertiary'>(?P<value>.*)</div>", self._read_file('bans.html'))
-        return bans
+        bans = re.finditer(r"'item__tertiary'>(?P<Date>.*)</div>", self._read_file('bans.html'))
+        return [i.groupdict() for i in bans]
 
 
 class Payments(Zip):
@@ -224,31 +229,20 @@ class Payments(Zip):
         super().__init__(name)
 
     def get_cards(self):
-        return re.findall("'item__main'>(?P<value>.*)</div>", self._read_file('cards-info'))
+        n = re.finditer("'item__main'>(?P<Number>.*)</div>", self._read_file('cards-info'))
+        return [i.groupdict() for i in n]
 
     def get_money_transfer(self):
-        mass = re.findall(
-            """'item__main'>(?P<trans>.+)</div><div.+'item__main'>(?P<operator>.+)<.*\s\s\s\s.+tertiary'>(?P<date>.+)<""",
+        mass = re.finditer(
+            r"""'item__main'>(?P<Transaction>.+)</div><div.+'item__main'>(?P<Operator>.+)<.*\s{4}.+tertiary'>(?P<Date>.+)<""",
             self._read_file('payments-history'))
-        mass = list(map(list, mass))
-        res = {}
-        for i in range(len(mass)):
-            if 'мая' in mass[i][2]:
-                mass[i][2] = mass[i][2].replace('мая', 'май')
-            res[mass[i][2]] = [mass[i][0], mass[i][1]]
-        return res
+        return self.date_corrector(mass)
 
     def get_votes(self):
-        mass = re.findall(
-            r"""'item__main'>(.+)</div><div.+'item__main'>(.+).*<a href="(.*)" c.*>(.*)</a></div>\n {2}\n {2}.+tertiary'>(.+)<|'item__main'>(.+)</div><div.+'item__main'>(.+)</div>\n {2}\n {2}.+tertiary'>(.+)<""",
+        mass = re.finditer(
+            r"""item__main'>(?P<Transaction>.+)</div>.+main'>(?:(?P<Present>.+) в подарок <a.+"(?P<Id>.+) class.+ >(?P<Name>.+)</a></div>|(?P<Item>.+)</div>)""",
             self._read_file('/votes-history'))
-        res = [list(filter(bool, i)) for i in mass]
-        fin = {}
-        for i in range(len(res)):
-            if 'мая' in res[i][-1]:
-                res[i][-1] = res[i][-1].replace('мая', 'май')
-            fin[res[i][-1]] = res[i][0:-1]
-        return fin
+        return [i.groupdict() for i in mass]
 
 
 class Photos(Zip):
@@ -258,51 +252,8 @@ class Photos(Zip):
     def get_photos(self):
         sp = []
         for i in self._get_paths_by_key('photos'):
-            sp.extend(re.findall('src="(.+)" ', self._read_file(i)))
-        return list(filter(bool, sp))
-
-
-class Profile(Zip):
-    def __init__(self, name):
-        super().__init__(name)
-
-    def get_blacklist(self):
-        sp = {}
-        for i in map(list, re.findall(r"""href="(.+)" .*">(.+)</a></div>\n\s\s\n.*'>(.+)</div>""",
-                                      self._read_file('blacklist'))):
-            sp[i[0]] = i[1:]
+            sp.extend([i.groupdict() for i in re.finditer('src="(?P<Photo>.+)" ', self._read_file(i))])
         return sp
-
-    def get_documents(self):
-        return re.findall('<a href="(.*)"', self._read_file('documents'))
-
-    def get_emails(self):
-        return re.findall(r"main'>(\S+).*</div>", self._read_file('email-changes'))
-
-    def get_requests(self):
-        return re.findall('href="(.+)">(.*)</a><', self._read_file('friends-requests'))
-
-    def get_friends(self):
-        return re.findall('href="(.+)">(.*)</a><', self._read_file('friends0.html'))
-
-    def get_names(self):
-        return {j for i in re.findall("main'>.+имени (.+) на (.+)</div>", self._read_file('name-changes')) for j in i}
-
-    def get_page_info(self):
-        mass = re.findall(
-            r"""">(.+)(?:</div>\s{3}|</div><div>)(?:<div>.*"(.+)" c|<div>(.*)</div>|(.*)<.div>)""",
-            self._read_file('page-info'))
-        return {a: b if b else c if c else d for a, b, c, d in mass if
-                b != 'Данных нет' and c != 'Данных нет' and d != 'Данных нет'}
-
-    def get_phones(self):
-        return {i for i in re.findall(r"main'>.* (\d+).*</div>", self._read_file('phone-changes'))}
-
-    def get_stories(self):
-        return re.findall('href="(.+)">vk', self._read_file('stories'))
-
-    def get_subs(self):
-        return re.findall('href="(.+)">(.*)</a></div>', self._read_file('subscriptions0.html'))
 
 
 class Video(Zip):
@@ -312,8 +263,68 @@ class Video(Zip):
     def get_videos(self):
         res = []
         for i in self._get_paths_by_key('video-albums'):
-            res.extend(re.findall('<a href="(.*)">\n', self._read_file(i)))
+            res.extend([i.groupdict() for i in re.finditer('<a href="(?P<Video>.*)">\n', self._read_file(i))])
         return res
+
+
+class Profile(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def get_blacklist(self):
+        mass = re.finditer(r"""href="(?P<Id>.+)" .*">(?P<Name>.+)</a></div>\n\s\s\n.*'>(?P<Date>.+)</div>""",
+                           self._read_file('blacklist'))
+        return self.date_corrector(mass)
+
+    def get_documents(self):
+        return [i.groupdict() for i in re.finditer('<a href="(?P<Document>.*)"', self._read_file('documents'))]
+
+    def get_emails(self):
+        return [i.groupdict() for i in re.finditer(r"main'>(?P<Email>\S+).*</div>", self._read_file('email-changes'))]
+
+    def get_requests(self):
+        return [i.groupdict() for i in
+                re.finditer('href="(?P<Id>.+)">(?P<Name>.*)</a><', self._read_file('friends-requests'))]
+
+    def get_friends(self):
+        return [i.groupdict() for i in
+                re.finditer('href="(?P<Id>.+)">(?P<Name>.*)</a><', self._read_file('friends0.html'))]
+
+    def get_names(self):
+        mass = re.finditer(
+            r"""main'>(?P<Result>\w+).+имени (?P<Prev>\w+ \w+) на (?P<Next>\w+ \w+)</div>\s+.+>(?P<Date>.+)</div>""",
+            self._read_file('name-changes'))
+        return self.date_corrector(mass)
+
+    def get_page_info(self):
+        mass = re.finditer(
+            r"""tertiary">(?P<Type>.+)(?:</div><div>|</div>\s{3}<div>(?:<a href="(?P<Id>.+) c.+ >)?)(?P<Value>.+)(?(Id)</a></div>|</div>)""",
+            self._read_file('page-info'))
+        return [i.groupdict() for i in mass]
+
+    def get_phones(self):
+        mass = re.finditer(r"main'>(?P<Result>\w+).+(?P<Number>\d{11}).+\n\s+.+'>(?P<Date>.+)</div>",
+                           self._read_file('phone-changes'))
+        return self.date_corrector(mass)
+
+    def get_stories(self):
+        return re.findall('href="(.+)">vk', self._read_file('stories'))
+
+    def get_subs(self, filepath_or_name):
+        if filepath_or_name.lower() != 'all':
+            try:
+                with open(filepath_or_name, encoding='utf-8') as file:
+                    file = [i.strip().lower() for i in file.readlines()]
+                    return [i.groupdict() for j in file for i in
+                            re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>',
+                                        self._read_file('subscriptions0.html'))
+                            if j in i.groupdict()['Name'].lower()]
+            except FileNotFoundError:
+                return [i.groupdict() for i in
+                        re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
+                        if
+                        filepath_or_name.lower() in i.groupdict()['Name'].lower()]
+        return re.findall('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
 
 
 class Wall(Zip):
@@ -323,5 +334,6 @@ class Wall(Zip):
     def get_wall(self):
         res = []
         for i in self._get_paths_by_key('wall'):
-            res.extend(re.findall('<a class="post__link fl_l" href="(.*)">', self._read_file(i)))
+            res.extend([i.groupdict() for i in
+                        re.finditer('<a class="post__link fl_l" href="(?P<Url>.*)">', self._read_file(i))])
         return res
