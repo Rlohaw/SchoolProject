@@ -52,7 +52,7 @@ class Coordinates(Zip):
                                 '(?P<Latitude>.+), '
                                 '(?P<Longitude>.+)</a>',
                                 text).groupdict()
-        return coordinates
+        return [coordinates]
 
 
 class Ads(Zip):
@@ -112,6 +112,12 @@ class Likes(Zip):
         return sorted(likes, key=lambda x: x['Type'])
 
 
+class Interlocutors(Zip):
+    def __init__(self, name):
+        super().__init__(name)
+
+
+
 class Users(Zip):
     def __init__(self, name):
         super().__init__(name)
@@ -142,12 +148,12 @@ class Users(Zip):
 
 
 class Messages(Zip):
-    def __init__(self, name, work_dict):
+    def __init__(self, name, _work_dict):
         super().__init__(name)
-        self.work_dict = work_dict
+        self._work_dict = _work_dict
 
     def __iter__(self):
-        for i in self.work_dict.values():
+        for i in self._work_dict.values():
             num = 0
             while rf"messages/{i}/messages{num}.html" in self._path:
                 res = self._read_file(rf"messages/{i}/messages{num}.html")
