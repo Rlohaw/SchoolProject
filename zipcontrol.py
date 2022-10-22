@@ -1,6 +1,6 @@
-import re
-from inspect import getfullargspec
 import csv
+from inspect import getfullargspec
+
 from skelet import *
 
 
@@ -20,6 +20,7 @@ class ZipControl:
         if sp:
             return f(input(f"{sp[0]}: "))
         return f()
+
     def select_data(self):
         users = dict(enumerate([i for i in dir(Users) if not i.startswith('_')]))
         [print(k, v) for k, v in users.items()]
@@ -43,11 +44,11 @@ class ZipControl:
             return self.get(exemplar, mode_dct)
 
 
-while True:
-    try:
-        archive = input("Archive: ")
-        w = r'(\w+)'
-        with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='utf-8') as file:
+archive = input("Archive: ")
+w = r'(\w+)'
+with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='utf-8', newline='') as file:
+    while True:
+        try:
             a = ZipControl(archive)
             res = a.start()
             print(res)
@@ -57,5 +58,5 @@ while True:
                 [writer.writerow(i) for i in res]
             else:
                 writer.writerow(res)
-    except Exception as e:
-        raise e
+        except Exception as e:
+            print(e)
