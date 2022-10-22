@@ -45,10 +45,10 @@ class ZipControl:
 
 
 archive = input("Archive: ")
-w = r'(\w+)'
-with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='utf-8', newline='') as file:
-    while True:
-        try:
+while True:
+    try:
+        w = r'(\w+)'
+        with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='utf-8', newline='') as file:
             a = ZipControl(archive)
             res = a.start()
             for i in res:
@@ -60,5 +60,5 @@ with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='u
                 [writer.writerow(i) for i in res]
             else:
                 writer.writerow(res)
-        except Exception as e:
-            print(e)
+    except Exception as e:
+        print(e)
