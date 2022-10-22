@@ -61,4 +61,4 @@ with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='u
             else:
                 writer.writerow(res)
         except Exception as e:
-            raise e
+            print(e)
