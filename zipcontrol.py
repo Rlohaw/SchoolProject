@@ -6,7 +6,7 @@ from skelet import *
 
 class ZipControl:
     __categories = dict(
-        enumerate((Coordinates, Ads, Apps, Audios, Likes, Messages, Others, Payments, Photos,
+        enumerate((Coordinates, Ads, Apps, Audios, Likes, Users, Messages, Others, Payments, Photos,
                    Profile, Video, Wall)))
 
     def __init__(self, path):
