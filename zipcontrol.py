@@ -51,7 +51,9 @@ with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='u
         try:
             a = ZipControl(archive)
             res = a.start()
-            print(res)
+            for i in res:
+                i = '; '.join(map(lambda x: ': '.join(map(str, x)), i.items()))
+                print(i)
             writer = csv.DictWriter(file, fieldnames=list(res[0].keys()) if isinstance(res, list) else list(res.keys()))
             writer.writeheader()
             if isinstance(res, list):
