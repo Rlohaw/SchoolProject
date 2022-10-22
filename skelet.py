@@ -32,7 +32,7 @@ class Zip:
         return [i for i in self._path if key in i]
 
     @staticmethod
-    def date_corrector(mass):
+    def _date_corrector(mass):
         res = []
         for i in mass:
             ex = i.groupdict()
@@ -48,11 +48,8 @@ class Coordinates(Zip):
 
     def get_coordinates(self):
         text = self._read_file('geo-points')
-        coordinates = re.search('<a href="(?P<Coodrinates_site>.+)">'
-                                '(?P<Latitude>.+), '
-                                '(?P<Longitude>.+)</a>',
-                                text).groupdict()
-        return coordinates
+        coordinates = re.finditer("""<a href="(?P<Site>.+)">.+ (?P<Latitude>.+), (?P<Longitude>.+)</a></div>\n""", text)
+        return [i.groupdict() for i in coordinates]
 
 
 class Ads(Zip):
@@ -115,39 +112,35 @@ class Likes(Zip):
 class Users(Zip):
     def __init__(self, name):
         super().__init__(name)
-        self.__messages_users = tuple(self._get_text('index-messages.html').items())
+        self.__messages = self._read_file('index-messages.html')
 
     def get_groups(self):
-        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users if
-                    i[1].startswith('-')])
+        res = list(filter(lambda x: x['MSGID'].startswith('-'), self.get_every()))
         return res
 
     def get_persons(self):
-        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users if
-                    re.search(r'^(\d{3,9}/)', i[1])])
+        res = list(filter(lambda x: 3 < len(x['MSGID']) < 10 and not x['MSGID'].startswith('-'), self.get_every()))
         return res
 
     def get_chats(self):
-        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users if
-                    re.search(r'^(\d{10}/)', i[1])])
+        res = list(filter(lambda x: len(x['MSGID']) == 10 and x['MSGID'].startswith('2'), self.get_every()))
         return res
 
     def get_every(self):
-        res = dict([(i[0], re.search('([0-9-]+)/', i[1]).group(1)) for i in self.__messages_users])
-        return res
+        res = re.finditer(r'<a href="(?P<MSGID>-?\d+).+>(?P<Name>.+)</a>\n', self.__messages)
+        return [i.groupdict() for i in res]
 
     def get_one(self, person_name):
-        value = self.get_every()[person_name]
-        return {person_name: value}
+        return list(filter(lambda x: x['Name'] == person_name, self.get_every()))
 
 
 class Messages(Zip):
-    def __init__(self, name, work_dict):
+    def __init__(self, name, _work_dict):
         super().__init__(name)
-        self.work_dict = work_dict
+        self._work_dict = _work_dict
 
     def __iter__(self):
-        for i in self.work_dict.values():
+        for i in map(lambda x: x['MSGID'], self._work_dict):
             num = 0
             while rf"messages/{i}/messages{num}.html" in self._path:
                 res = self._read_file(rf"messages/{i}/messages{num}.html")
@@ -203,11 +196,11 @@ class Messages(Zip):
                 m += len(re.findall(r'(\w+)', i['Text']))
             else:
                 nm += len(re.findall(r'(\w+)', i['Text']))
-        return {'Kd': round(m / nm, 2)}
+        return [{'Kd': round(m / nm, 2)}]
 
     def get_total_words(self):
-        return {'Words': collections.Counter(
-            w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text'])).total()}
+        return [{'Words': collections.Counter(
+            w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text'])).total()}]
 
 
 class Others(Zip):
@@ -236,7 +229,7 @@ class Payments(Zip):
         mass = re.finditer(
             r"""'item__main'>(?P<Transaction>.+)</div><div.+'item__main'>(?P<Operator>.+)<.*\s{4}.+tertiary'>(?P<Date>.+)<""",
             self._read_file('payments-history'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_votes(self):
         mass = re.finditer(
@@ -274,7 +267,7 @@ class Profile(Zip):
     def get_blacklist(self):
         mass = re.finditer(r"""href="(?P<Id>.+)" .*">(?P<Name>.+)</a></div>\n\s\s\n.*'>(?P<Date>.+)</div>""",
                            self._read_file('blacklist'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_documents(self):
         return [i.groupdict() for i in re.finditer('<a href="(?P<Document>.*)"', self._read_file('documents'))]
@@ -294,7 +287,7 @@ class Profile(Zip):
         mass = re.finditer(
             r"""main'>(?P<Result>\w+).+имени (?P<Prev>\w+ \w+) на (?P<Next>\w+ \w+)</div>\s+.+>(?P<Date>.+)</div>""",
             self._read_file('name-changes'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_page_info(self):
         mass = re.finditer(
@@ -305,7 +298,7 @@ class Profile(Zip):
     def get_phones(self):
         mass = re.finditer(r"main'>(?P<Result>\w+).+(?P<Number>\d{11}).+\n\s+.+'>(?P<Date>.+)</div>",
                            self._read_file('phone-changes'))
-        return self.date_corrector(mass)
+        return self._date_corrector(mass)
 
     def get_stories(self):
         return re.findall('href="(.+)">vk', self._read_file('stories'))
