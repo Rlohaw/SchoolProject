@@ -186,7 +186,7 @@ class Messages(Zip):
     def get_top_words(self):
         res = collections.Counter(
             w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text']))
-        return [{'Word': key, 'Count': value} for key, value in res.items()]
+        return sorted([{'Word': key, 'Count': int(value)} for key, value in res.items()], key=lambda x: x['Count'], reverse=True)
 
     def get_kd(self):
         m = 0
