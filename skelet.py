@@ -154,7 +154,6 @@ class Messages(Zip):
         for msg in self:
             if msg.groupdict()['Link'] is not None:
                 ex = msg.groupdict()
-                ex['Text'] = ex['Text'].replace('<br>', '')
                 if 'мая' in ex['Date']:
                     ex['Date'] = ex['Date'].replace('мая', 'май')
                     yield ex
@@ -186,7 +185,8 @@ class Messages(Zip):
     def get_top_words(self):
         res = collections.Counter(
             w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text']))
-        return sorted([{'Word': key, 'Count': int(value)} for key, value in res.items()], key=lambda x: x['Count'], reverse=True)
+        return sorted([{'Word': key, 'Count': int(value)} for key, value in res.items()], key=lambda x: x['Count'],
+                      reverse=True)
 
     def get_kd(self):
         m = 0
@@ -201,6 +201,10 @@ class Messages(Zip):
     def get_total_words(self):
         return [{'Words': collections.Counter(
             w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text'])).total()}]
+
+    def get_messages(self):
+        return sorted([i for i in self._text_messages()] + [i for i in self._file_messages()],
+                      key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
 
 
 class Others(Zip):
@@ -303,10 +307,10 @@ class Profile(Zip):
     def get_stories(self):
         return re.findall('href="(.+)">vk', self._read_file('stories'))
 
-    def get_subs(self, filepath_or_name):
-        if filepath_or_name.lower() != 'all':
+    def get_subs(self, filepath_or_name_or_all):
+        if filepath_or_name_or_all.lower() != 'all':
             try:
-                with open(filepath_or_name, encoding='utf-8') as file:
+                with open(filepath_or_name_or_all, encoding='utf-8') as file:
                     file = [i.strip().lower() for i in file.readlines()]
                     return [i.groupdict() for j in file for i in
                             re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>',
@@ -316,7 +320,7 @@ class Profile(Zip):
                 return [i.groupdict() for i in
                         re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
                         if
-                        filepath_or_name.lower() in i.groupdict()['Name'].lower()]
+                        filepath_or_name_or_all.lower() in i.groupdict()['Name'].lower()]
         return re.findall('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
 
 

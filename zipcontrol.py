@@ -61,4 +61,4 @@ while True:
             else:
                 writer.writerow(res)
     except Exception as e:
-        print(e)
+        raise e
