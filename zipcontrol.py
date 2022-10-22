@@ -44,9 +44,9 @@ class ZipControl:
             return self.get(exemplar, mode_dct)
 
 
-archive = input("Archive: ")
 while True:
     try:
+        archive = input("Archive: ")
         w = r'(\w+)'
         with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='utf-8', newline='') as file:
             a = ZipControl(archive)
