@@ -7,21 +7,22 @@ from skelet import *
 class ZipControl:
     __categories = dict(
         enumerate((Coordinates, Ads, Apps, Audios, Likes, Users, Messages, Others, Payments, Photos,
-                   Profile, Video, Wall)))
+                   Profile, Video, Wall)))  # Нумерация функций
 
     def __init__(self, path):
         self.path = path.strip('\\')
         [print(k, v.__name__) for k, v in self.__categories.items()]
-        self.category = self.__categories[int(input('Class: '))]
+        self.category = self.__categories[int(input('Class: '))]  # Вывод функций, а так же выбор её
 
-    def get(self, ex, dct):
+    @staticmethod
+    def get(ex, dct):  # Функция для ввода аргументов в функцию
         f = getattr(ex, dct[int(input("Method: "))])
         sp = getfullargspec(f).args[1:]
         if sp:
             return f(input(f"{sp[0]}: "))
         return f()
 
-    def select_data(self):
+    def select_data(self):  # Функция для выбора круга поиска сообщений
         users = dict(enumerate([i for i in dir(Users) if not i.startswith('_')]))
         [print(k, v) for k, v in users.items()]
         selected_users = users[int(input("Users: "))]
@@ -30,7 +31,7 @@ class ZipControl:
             return getattr(Users(self.path), selected_users)(input(f"{args[0]}: "))
         return getattr(Users(self.path), selected_users)()
 
-    def start(self):
+    def start(self):  # Функция управляющая вводом - выводом
         sp = getfullargspec(self.category).args[2:]
         if not sp:
             exemplar = self.category(self.path)
@@ -51,9 +52,9 @@ while True:
         with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='utf-8', newline='') as file:
             a = ZipControl(archive)
             res = a.start()
-            for i in res:
-                i = '; '.join(map(lambda x: ': '.join(map(str, x)), i.items()))
-                print(i)
+            for s in res:
+                s = '; '.join(map(lambda x: ': '.join(map(str, x)), s.items()))
+                print(s)
             writer = csv.DictWriter(file, fieldnames=list(res[0].keys()) if isinstance(res, list) else list(res.keys()))
             writer.writeheader()
             if isinstance(res, list):

@@ -175,11 +175,10 @@ class Messages(Zip):
         try:
             with open(words_or_file, encoding='utf-8') as file:
                 file = [i.strip().lower() for i in file.readlines()]
-                return sorted([sp for sp in self._text_messages() for ww in file if ww.lower() in sp['Text'].lower()],
+                return sorted([sp for sp in self._text_messages() for ww in file if ww.lower() == sp['Text'].lower()],
                               key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
         except FileNotFoundError:
-            mass = words_or_file.split()
-            return sorted([sp for sp in self._text_messages() for ww in mass if ww.lower() in sp['Text'].lower()],
+            return sorted([sp for sp in self._text_messages() if words_or_file.lower() in sp['Text'].lower()],
                           key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
 
     def get_top_words(self):
