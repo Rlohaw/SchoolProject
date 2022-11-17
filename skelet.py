@@ -2,7 +2,9 @@ import collections
 import datetime
 import locale
 import re
+import time
 import zipfile
+from bs4 import BeautifulSoup
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
@@ -17,8 +19,8 @@ class Zip:
         self.__zip.close()
 
     def _get_text(self, key):
-        text = self._read_file(key)
-        text_dict = dict(map(lambda x: reversed(x), re.findall('<a href="(.*)">(.*)</a>', text)))
+        soup = BeautifulSoup(self._read_file(key), 'lxml')
+        text_dict = {i.get_text(): i.get('href') for i in soup.find_all('a')}
         return text_dict
 
     def _read_file(self, key):
@@ -47,9 +49,10 @@ class Coordinates(Zip):
         super().__init__(name)
 
     def get_coordinates(self):
-        text = self._read_file('geo-points')
-        coordinates = re.finditer("""<a href="(?P<Site>.+)">.+ (?P<Latitude>.+), (?P<Longitude>.+)</a></div>\n""", text)
-        return [i.groupdict() for i in coordinates]
+        soup = BeautifulSoup(self._read_file('geo-points'), 'lxml')
+        a = soup.find(class_='item__main').find('a')
+        mass = a.get_text('|;|', strip=True).split()[1::2]
+        return [{'Link': a.get('href'), 'Latitude': mass[0], 'Longitude': mass[1]}]
 
 
 class Ads(Zip):
@@ -66,10 +69,10 @@ class Ads(Zip):
         return list(filter(lambda x: x['Type'] == 'Сторонний сегмент', self.get_ads()))
 
     def get_ads(self):
-        text = self._read_file('interests')
-        mass = re.finditer(r''''item__main'>(?P<Interest>.+)</div>\s+.+'item__tertiary'>(?P<Type>.+)</div>''', text)
-        dct = [i.groupdict() for i in mass]
-        return dct
+        soup = BeautifulSoup(self._read_file('interests'), 'lxml')
+        res = ({'Interest': i.find(class_='item__main').get_text(), 'Type': i.find(class_='item__tertiary').text} for i
+               in soup.find_all(class_='item'))
+        return res
 
 
 class Apps(Zip):
@@ -77,8 +80,8 @@ class Apps(Zip):
         super().__init__(name)
 
     def get_apps(self):
-        mass = re.finditer("class='item__main'>(?P<App>.+)</div>", self._read_file('apps'))
-        return sorted([i.groupdict() for i in mass], key=lambda x: x['App'])
+        soup = BeautifulSoup(self._read_file('apps'), 'lxml')
+        return ({'App': i.get_text()} for i in soup.find_all(class_='item__main'))
 
 
 class Audios(Zip):
@@ -88,11 +91,13 @@ class Audios(Zip):
     def get_audios(self):
         audios = []
         for nam in self._get_text('audio-albums.html').values():
-            if self._read_file(nam):
-                text = self._read_file(nam)
-                mass = re.finditer('audio__title">(?P<Name>.+) &mdash; (?P<Artist>.+)</div>', text)
-                [audios.append(i.groupdict()) for i in mass if i.groupdict() not in audios]
-        return sorted(audios, key=lambda x: x['Artist'])
+            read = self._read_file(nam)
+            if read:
+                soup = BeautifulSoup(read, 'lxml')
+                g = ({'Name': n, 'Artist': a} for a, n in
+                     map(lambda x: x.get_text().split(' — '), soup.find_all(class_='audio__title')))
+                audios.extend(g)
+        return audios
 
 
 class Likes(Zip):
@@ -102,17 +107,17 @@ class Likes(Zip):
     def get_likes(self):
         likes = []
         for key, nam in self._get_text('likes.html').items():
-            if self._read_file(nam):
-                text = self._read_file(nam)
-                mass = re.findall('<a href="(.*)">', text)
-                [likes.append({'Type': key, 'Url': i}) for i in mass]
+            read = self._read_file(nam)
+            if read:
+                soup = BeautifulSoup(read, 'lxml')
+                [likes.append({'Type': key, 'Url': i.get_text()}) for i in soup.find_all('a') if
+                 i.get_text().startswith('https')]
         return sorted(likes, key=lambda x: x['Type'])
 
 
 class Users(Zip):
     def __init__(self, name):
         super().__init__(name)
-        self.__messages = self._read_file('index-messages.html')
 
     def get_groups(self):
         res = list(filter(lambda x: x['MSGID'].startswith('-'), self.get_every()))
@@ -127,11 +132,14 @@ class Users(Zip):
         return res
 
     def get_every(self):
-        res = re.finditer(r'<a href="(?P<MSGID>-?\d+).+>(?P<Name>.+)</a>\n', self.__messages)
-        return [i.groupdict() for i in res]
+        soup = BeautifulSoup(self._read_file('index-messages.html'), 'lxml')
+        res = ({'Name': k, 'MSGID': re.search(r'\d+', v).group()} for k, v in
+               self._get_text('index-messages.html').items() if re.findall('\d+', v))
+        return res
 
     def get_one(self, person_name):
-        return list(filter(lambda x: x['Name'] == person_name, self.get_every()))
+        res = list(filter(lambda x: x['Name'] == person_name, self.get_every()))
+        return res
 
 
 class Messages(Zip):
@@ -143,54 +151,37 @@ class Messages(Zip):
         for i in map(lambda x: x['MSGID'], self._work_dict):
             num = 0
             while rf"messages/{i}/messages{num}.html" in self._path:
-                res = self._read_file(rf"messages/{i}/messages{num}.html")
+                bs = BeautifulSoup(self._read_file(rf"messages/{i}/messages{num}.html"), 'lxml')
                 num += 50
-                mass = re.finditer(
-                    r"""header">(?:<a href="(?P<Id>.+)">)?(?P<Name>.+)(?(Id)</a>, |, )(?P<Date>[А-я0-9 :]+).*\n(?:(?:\s+.*\n){3}.*>(?P<Type>[А-я0-9]+).*\n.*href='(?P<Link>.*)'>| {2}<div>(?P<Text>.+)<div class="kludges">)""",
-                    res)
-                yield from mass
-
-    def _file_messages(self):
-        for msg in self:
-            if msg.groupdict()['Link'] is not None:
-                ex = msg.groupdict()
-                if 'мая' in ex['Date']:
-                    ex['Date'] = ex['Date'].replace('мая', 'май')
-                    yield ex
-                else:
-                    yield ex
-
-    def _text_messages(self):
-        for msg in self:
-            if msg.groupdict()['Text'] is not None:
-                ex = msg.groupdict()
-                ex['Text'] = ex['Text'].replace('<br>', '')
-                if 'мая' in ex['Date']:
-                    ex['Date'] = ex['Date'].replace('мая', 'май')
-                    yield ex
-                else:
-                    yield ex
+                text = filter(lambda x: len(x) > 1 if x[0].startswith('Вы, ') else len(x) > 2,
+                              map(lambda x: x.get_text('||;||', strip=True).split('||;||')[0:3],
+                                  bs.find_all(class_='message')))
+                id = collections.Counter(map(lambda x: x.get('href'), bs.find_all('a'))).most_common(1)[0][0]
+                ww = ('Видеозапись', 'Файл', 'Фотография', 'Сообщение удалено', 'Стикер', 'Запись со стены', 'Ссылка',
+                      '(ред.)')
+                yield from ({'Name': msg[0] if not msg[0].startswith('Вы, ') else 'Вы',
+                             'Date': msg[0].lstrip('Вы, ') if msg[0].startswith('Вы, ') else msg[1],
+                             'Text': msg[1] if msg[0].startswith('Вы, ') else msg[2],
+                             'Id': id if msg[0].startswith('Вы, ') else 0} for msg in text if not
+                            (msg[1] in ww if msg[0].startswith('Вы, ') else msg[2] in ww))
 
     def search_by_words(self, words_or_file):
         try:
             with open(words_or_file, encoding='utf-8') as file:
                 file = [i.strip().lower() for i in file.readlines()]
-                return sorted([sp for sp in self._text_messages() for ww in file if ww.lower() == sp['Text'].lower()],
+                return sorted([sp for sp in self for ww in file if ww.lower() == sp['Text'].lower()],
                               key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
         except FileNotFoundError:
-            return sorted([sp for sp in self._text_messages() if words_or_file.lower() in sp['Text'].lower()],
+            return sorted([sp for sp in self if words_or_file.lower() in sp['Text'].lower()],
                           key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
 
     def get_top_words(self):
-        res = collections.Counter(
-            w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text']))
-        return sorted([{'Word': key, 'Count': int(value)} for key, value in res.items()], key=lambda x: x['Count'],
-                      reverse=True)
+        return collections.Counter(i.lower() for j in self for i in re.findall(r'\w+', j['Text']))
 
     def get_kd(self):
         m = 0
         nm = 0
-        for i in self._text_messages():
+        for i in self:
             if i['Name'] == 'Вы':
                 m += len(re.findall(r'(\w+)', i['Text']))
             else:
@@ -199,10 +190,10 @@ class Messages(Zip):
 
     def get_total_words(self):
         return [{'Words': collections.Counter(
-            w.group() for msg in self._text_messages() for w in re.finditer(r'(\w+)', msg['Text'])).total()}]
+            w.group() for msg in self for w in re.finditer(r'(\w+)', msg['Text'])).total()}]
 
     def get_messages(self):
-        return sorted([i for i in self._text_messages()] + [i for i in self._file_messages()],
+        return sorted([i for i in self],
                       key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
 
 
@@ -333,3 +324,8 @@ class Wall(Zip):
             res.extend([i.groupdict() for i in
                         re.finditer('<a class="post__link fl_l" href="(?P<Url>.*)">', self._read_file(i))])
         return res
+
+
+strt = time.perf_counter()
+ax = Messages(r'D:\archive.zip', Users(r'D:\archive.zip').get_every()).get_top_words()
+print(ax, time.perf_counter() - strt)
