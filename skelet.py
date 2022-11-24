@@ -5,8 +5,19 @@ import re
 import time
 import zipfile
 from bs4 import BeautifulSoup
+import pandas as pd
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
+
+
+def time_counter(func):
+    def wrapper(*args, **kwargs):
+        strt = time.perf_counter()
+        res = func(*args, **kwargs)
+        print(time.perf_counter() - strt)
+        return res
+
+    return wrapper
 
 
 class Zip:
@@ -19,14 +30,14 @@ class Zip:
         self.__zip.close()
 
     def _get_text(self, key):
-        soup = BeautifulSoup(self._read_file(key), 'lxml')
+        soup = self._read_file(key)
         text_dict = {i.get_text(): i.get('href') for i in soup.find_all('a')}
         return text_dict
 
     def _read_file(self, key):
         try:
             with self.__zip.open(*(i for i in self._path if key in i)) as file:
-                return file.read().decode('ANSI')
+                return BeautifulSoup(file.read(), 'lxml')
         except TypeError:
             pass
 
@@ -39,9 +50,9 @@ class Zip:
         for i in mass:
             ex = i.groupdict()
             if 'мая' in ex['Date']:
-                ex['Date'] = ex['Date'].replace('мая', 'май')
+                ex['date'] = ex['date'].replace('мая', 'май')
             res.append(ex)
-        return sorted(res, key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M'))
+        return sorted(res, key=lambda x: datetime.datetime.strptime(x['date'], '%d %b %Y в %H:%M'))
 
 
 class Coordinates(Zip):
@@ -49,10 +60,10 @@ class Coordinates(Zip):
         super().__init__(name)
 
     def get_coordinates(self):
-        soup = BeautifulSoup(self._read_file('geo-points'), 'lxml')
+        soup = self._read_file('geo-points')
         a = soup.find(class_='item__main').find('a')
         mass = a.get_text('|;|', strip=True).split()[1::2]
-        return [{'Link': a.get('href'), 'Latitude': mass[0], 'Longitude': mass[1]}]
+        return [{'link': a.get('href'), 'latitude': mass[0], 'longitude': mass[1]}]
 
 
 class Ads(Zip):
@@ -60,17 +71,17 @@ class Ads(Zip):
         super().__init__(name)
 
     def get_ads_personal_interest(self):
-        return list(filter(lambda x: x['Type'] == 'Пользовательский интерес', self.get_ads()))
+        return list(filter(lambda x: x['type'] == 'Пользовательский интерес', self.get_ads()))
 
     def get_ads_system(self):
-        return list(filter(lambda x: x['Type'] == 'Системный сегмент', self.get_ads()))
+        return list(filter(lambda x: x['type'] == 'Системный сегмент', self.get_ads()))
 
     def get_ads_other(self):
-        return list(filter(lambda x: x['Type'] == 'Сторонний сегмент', self.get_ads()))
+        return list(filter(lambda x: x['type'] == 'Сторонний сегмент', self.get_ads()))
 
     def get_ads(self):
-        soup = BeautifulSoup(self._read_file('interests'), 'lxml')
-        res = ({'Interest': i.find(class_='item__main').get_text(), 'Type': i.find(class_='item__tertiary').text} for i
+        soup = self._read_file('interests')
+        res = ({'interest': i.find(class_='item__main').get_text(), 'type': i.find(class_='item__tertiary').text} for i
                in soup.find_all(class_='item'))
         return res
 
@@ -80,8 +91,8 @@ class Apps(Zip):
         super().__init__(name)
 
     def get_apps(self):
-        soup = BeautifulSoup(self._read_file('apps'), 'lxml')
-        return ({'App': i.get_text()} for i in soup.find_all(class_='item__main'))
+        soup = self._read_file('apps')
+        return ({'app': i.get_text()} for i in soup.find_all(class_='item__main'))
 
 
 class Audios(Zip):
@@ -93,9 +104,8 @@ class Audios(Zip):
         for nam in self._get_text('audio-albums.html').values():
             read = self._read_file(nam)
             if read:
-                soup = BeautifulSoup(read, 'lxml')
-                g = ({'Name': n, 'Artist': a} for a, n in
-                     map(lambda x: x.get_text().split(' — '), soup.find_all(class_='audio__title')))
+                g = ({'name': n, 'artist': a} for a, n in
+                     map(lambda x: x.get_text().split(' — '), read.find_all(class_='audio__title')))
                 audios.extend(g)
         return audios
 
@@ -109,10 +119,9 @@ class Likes(Zip):
         for key, nam in self._get_text('likes.html').items():
             read = self._read_file(nam)
             if read:
-                soup = BeautifulSoup(read, 'lxml')
-                [likes.append({'Type': key, 'Url': i.get_text()}) for i in soup.find_all('a') if
+                [likes.append({'type': key, 'url': i.get_text()}) for i in read.find_all('a') if
                  i.get_text().startswith('https')]
-        return sorted(likes, key=lambda x: x['Type'])
+        return sorted(likes, key=lambda x: x['type'])
 
 
 class Users(Zip):
@@ -120,25 +129,25 @@ class Users(Zip):
         super().__init__(name)
 
     def get_groups(self):
-        res = list(filter(lambda x: x['MSGID'].startswith('-'), self.get_every()))
+        res = list(filter(lambda x: x['msgid'].startswith('-'), self.get_every()))
         return res
 
     def get_persons(self):
-        res = list(filter(lambda x: 3 < len(x['MSGID']) < 10 and not x['MSGID'].startswith('-'), self.get_every()))
+        res = list(filter(lambda x: 3 < len(x['msgid']) < 10 and not x['msgid'].startswith('-'), self.get_every()))
         return res
 
     def get_chats(self):
-        res = list(filter(lambda x: len(x['MSGID']) == 10 and x['MSGID'].startswith('2'), self.get_every()))
+        res = list(filter(lambda x: len(x['msgid']) == 10 and x['msgid'].startswith('2'), self.get_every()))
         return res
 
     def get_every(self):
-        soup = BeautifulSoup(self._read_file('index-messages.html'), 'lxml')
-        res = ({'Name': k, 'MSGID': re.search(r'\d+', v).group()} for k, v in
-               self._get_text('index-messages.html').items() if re.findall('\d+', v))
+        soup = self._read_file('index-messages.html')
+        res = ({'name': k, 'msgid': re.search(r'\d+', v).group()} for k, v in
+               self._get_text('index-messages.html').items() if re.findall(r'\d+', v))
         return res
 
     def get_one(self, person_name):
-        res = list(filter(lambda x: x['Name'] == person_name, self.get_every()))
+        res = list(filter(lambda x: x['name'] == person_name, self.get_every()))
         return res
 
 
@@ -148,44 +157,48 @@ class Messages(Zip):
         self._work_dict = _work_dict
 
     def __iter__(self):
-        for i in map(lambda x: x['MSGID'], self._work_dict):
+        for i in map(lambda x: x['msgid'], self._work_dict):
             num = 0
             while rf"messages/{i}/messages{num}.html" in self._path:
-                bs = BeautifulSoup(self._read_file(rf"messages/{i}/messages{num}.html"), 'lxml')
+                bs = self._read_file(rf"messages/{i}/messages{num}.html")
                 num += 50
-                text = filter(lambda x: len(x) > 1 if x[0].startswith('Вы, ') else len(x) > 2,
-                              map(lambda x: x.get_text('||;||', strip=True).split('||;||')[0:3],
-                                  bs.find_all(class_='message')))
-                id = collections.Counter(map(lambda x: x.get('href'), bs.find_all('a'))).most_common(1)[0][0]
+
                 ww = ('Видеозапись', 'Файл', 'Фотография', 'Сообщение удалено', 'Стикер', 'Запись со стены', 'Ссылка',
-                      '(ред.)')
-                yield from ({'Name': msg[0] if not msg[0].startswith('Вы, ') else 'Вы',
-                             'Date': msg[0].lstrip('Вы, ') if msg[0].startswith('Вы, ') else msg[1],
-                             'Text': msg[1] if msg[0].startswith('Вы, ') else msg[2],
-                             'Id': id if msg[0].startswith('Вы, ') else 0} for msg in text if not
-                            (msg[1] in ww if msg[0].startswith('Вы, ') else msg[2] in ww))
+                      '(ред.)', 'Запись на стене')
+
+                text = map(lambda x: tuple(filter(lambda x: x not in ww, [
+                    x.find(class_='message__header').find('a').get('href') if x.find(class_='message__header').find(
+                        'a') else 0] + x.get_text('||;||', strip=True).split('||;||'))),
+                           bs.find_all(class_='message'))
+
+                yield from ({'id': msg[0], 'name': 'Вы' if not msg[0] else msg[1],
+                             'date': msg[1].lstrip('Вы, ') if not msg[0] else msg[2],
+                             'text': '\n'.join(msg[2:]) if not msg[0] else '\n'.join(msg[3:])} for msg in
+                            filter(lambda x: len(x) >= 2 if x[0] == 0 else len(x) >= 3, text))
 
     def search_by_words(self, words_or_file):
         try:
             with open(words_or_file, encoding='utf-8') as file:
                 file = [i.strip().lower() for i in file.readlines()]
-                return sorted([sp for sp in self for ww in file if ww.lower() == sp['Text'].lower()],
-                              key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
+                return [sp for sp in self for ww in file if ww.lower() == sp['text'].lower()]
         except FileNotFoundError:
-            return sorted([sp for sp in self if words_or_file.lower() in sp['Text'].lower()],
-                          key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
+            return [sp for sp in self if words_or_file.lower() in sp['text'].lower()]
 
     def get_top_words(self):
-        return collections.Counter(i.lower() for j in self for i in re.findall(r'\w+', j['Text']))
+        return collections.Counter(i.group().lower() for j in self for i in re.finditer(r'\w+', j['text'])).most_common(100)
 
     def get_kd(self):
         m = 0
         nm = 0
         for i in self:
-            if i['Name'] == 'Вы':
-                m += len(re.findall(r'(\w+)', i['Text']))
+            if i['name'] == 'Вы':
+                txt = i['text'].split('\n')[0]
+                if not txt.startswith('https'):
+                    m += len(re.findall(r'(\w+)', i['text'].split('\n')[0]))
             else:
-                nm += len(re.findall(r'(\w+)', i['Text']))
+                txt = i['text'].split('\n')[0]
+                if not txt.startswith('https'):
+                    nm += len(re.findall(r'(\w+)', i['text'].split('\n')[0]))
         return [{'Kd': round(m / nm, 2)}]
 
     def get_total_words(self):
@@ -327,5 +340,5 @@ class Wall(Zip):
 
 
 strt = time.perf_counter()
-ax = Messages(r'D:\archive.zip', Users(r'D:\archive.zip').get_every()).get_top_words()
+ax = Messages(r'Z:\const\archive.zip', Users(r'Z:\const\archive.zip').get_every()).get_kd()
 print(ax, time.perf_counter() - strt)
