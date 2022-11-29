@@ -163,7 +163,7 @@ class Messages(Zip):
                 num += 50
 
                 ww = ('Видеозапись', 'Файл', 'Фотография', 'Сообщение удалено', 'Стикер', 'Запись со стены', 'Ссылка',
-                      '(ред.)', 'Запись на стене')
+                      '(ред.)', 'Запись на стене', '1 прикреплённое сообщение')
 
                 text = map(lambda x: tuple(filter(lambda x: x not in ww, [
                     x.find(class_='message__header').find('a').get('href') if x.find(class_='message__header').find(
@@ -184,27 +184,25 @@ class Messages(Zip):
             return [sp for sp in self if words_or_file.lower() in sp['text'].lower()]
 
     def get_top_words(self):
-        col = collections.Counter(
-            i.group().lower() for j in self for i in re.finditer(r'\w+', j['text'].split('\n')[0]))
-        return {word: count for word, count in col.items()}
+        return sorted([{'word': word, 'count': count} for word, count in collections.Counter(
+            i.group().lower() for j in self for i in
+            re.finditer(r'\w+', ''.join(filter(lambda x: not x.startswith('https'), j['text'].split('\n'))))).items()], key=lambda x: x['count'])
 
     def get_kd(self):
         m = 0
         nm = 0
         for i in self:
+            txt = ''.join(filter(lambda x: not x.startswith('https'), i['text'].split('\n')))
             if i['name'] == 'Вы':
-                txt = i['text'].split('\n')[0]
-                if not txt.startswith('https'):
-                    m += len(re.findall(r'(\w+)', txt))
+                m += len(re.findall(r'(\w+)', txt))
             else:
-                txt = i['text'].split('\n')[0]
-                if not txt.startswith('https'):
-                    nm += len(re.findall(r'(\w+)', txt))
+                nm += len(re.findall(r'(\w+)', txt))
         return [{'Kd': round(m / nm, 2)}]
 
     def get_total_words(self):
         return [{'Words': collections.Counter(
-            w.group() for msg in self for w in re.finditer(r'(\w+)', msg['text'])).total()}]
+            w.group() for msg in self for w in re.finditer(r'(\w+)', ''.join(
+                filter(lambda x: not x.startswith('https'), msg['text'].split('\n'))))).total()}]
 
     def get_messages(self):
         return [i for i in self]
