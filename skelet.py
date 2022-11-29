@@ -171,7 +171,7 @@ class Messages(Zip):
                            bs.find_all(class_='message'))
 
                 yield from ({'id': msg[0], 'name': 'Вы' if not msg[0] else msg[1],
-                             'date': msg[1].lstrip('Вы, ') if not msg[0] else msg[2],
+                             'date': msg[1].lstrip('Вы, ') if not msg[0] else msg[2].lstrip(', '),
                              'text': '\n'.join(msg[2:]) if not msg[0] else '\n'.join(msg[3:])} for msg in
                             filter(lambda x: len(x) >= 2 if x[0] == 0 else len(x) >= 3, text))
 
