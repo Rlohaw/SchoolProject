@@ -5,7 +5,6 @@ import re
 import time
 import zipfile
 from bs4 import BeautifulSoup
-import pandas as pd
 
 locale.setlocale(locale.LC_ALL, 'ru_RU.UTF-8')
 
@@ -180,12 +179,14 @@ class Messages(Zip):
         try:
             with open(words_or_file, encoding='utf-8') as file:
                 file = [i.strip().lower() for i in file.readlines()]
-                return [sp for sp in self for ww in file if ww.lower() == sp['text'].lower()]
+                return [sp for sp in self for ww in file if ww in sp['text'].lower()]
         except FileNotFoundError:
             return [sp for sp in self if words_or_file.lower() in sp['text'].lower()]
 
     def get_top_words(self):
-        return collections.Counter(i.group().lower() for j in self for i in re.finditer(r'\w+', j['text'])).most_common(100)
+        col = collections.Counter(
+            i.group().lower() for j in self for i in re.finditer(r'\w+', j['text'].split('\n')[0]))
+        return {word: count for word, count in col.items()}
 
     def get_kd(self):
         m = 0
@@ -194,20 +195,19 @@ class Messages(Zip):
             if i['name'] == 'Вы':
                 txt = i['text'].split('\n')[0]
                 if not txt.startswith('https'):
-                    m += len(re.findall(r'(\w+)', i['text'].split('\n')[0]))
+                    m += len(re.findall(r'(\w+)', txt))
             else:
                 txt = i['text'].split('\n')[0]
                 if not txt.startswith('https'):
-                    nm += len(re.findall(r'(\w+)', i['text'].split('\n')[0]))
+                    nm += len(re.findall(r'(\w+)', txt))
         return [{'Kd': round(m / nm, 2)}]
 
     def get_total_words(self):
         return [{'Words': collections.Counter(
-            w.group() for msg in self for w in re.finditer(r'(\w+)', msg['Text'])).total()}]
+            w.group() for msg in self for w in re.finditer(r'(\w+)', msg['text'])).total()}]
 
     def get_messages(self):
-        return sorted([i for i in self],
-                      key=lambda x: datetime.datetime.strptime(x['Date'], '%d %b %Y в %H:%M:%S'))
+        return [i for i in self]
 
 
 class Others(Zip):
@@ -215,13 +215,13 @@ class Others(Zip):
         super().__init__(name)
 
     def get_contacts(self):
-        res = [{'Number': j} for i in self._get_paths_by_key('other/external-contacts/archive') for j in
-               re.findall("'item__main'>(.*)</div>", self._read_file(i))]
+        res = [{'number': j} for i in self._get_paths_by_key('other/external-contacts/archive') for j in
+               map(lambda x: x.get_text(), self._read_file(i).find_all(class_='item__main'))]
         return res
 
     def get_bans(self):
-        bans = re.finditer(r"'item__tertiary'>(?P<Date>.*)</div>", self._read_file('bans.html'))
-        return [i.groupdict() for i in bans]
+        return [{'date': i} for i in
+                map(lambda x: x.get_text(), self._read_file('bans.html').find_all(class_='item__tertiary'))]
 
 
 class Payments(Zip):
@@ -229,20 +229,19 @@ class Payments(Zip):
         super().__init__(name)
 
     def get_cards(self):
-        n = re.finditer("'item__main'>(?P<Number>.*)</div>", self._read_file('cards-info'))
-        return [i.groupdict() for i in n]
+        return [{'number': i.get_text()} for i in self._read_file('cards-info').find_all(class_='item__main')]
 
-    def get_money_transfer(self):
-        mass = re.finditer(
-            r"""'item__main'>(?P<Transaction>.+)</div><div.+'item__main'>(?P<Operator>.+)<.*\s{4}.+tertiary'>(?P<Date>.+)<""",
-            self._read_file('payments-history'))
-        return self._date_corrector(mass)
+    def get_payments_history(self):
+        sp = self._read_file('payments-history')
+        return [{'sum': i.find(class_='item__main').get_text(),
+                 'operator': i.find(class_='item__main').find_next(class_='item__main').get_text(),
+                 'date': i.find(class_='item__tertiary').get_text()} for i in sp.find_all(class_='item')]
 
     def get_votes(self):
-        mass = re.finditer(
-            r"""item__main'>(?P<Transaction>.+)</div>.+main'>(?:(?P<Present>.+) в подарок <a.+"(?P<Id>.+) class.+ >(?P<Name>.+)</a></div>|(?P<Item>.+)</div>)""",
-            self._read_file('/votes-history'))
-        return [i.groupdict() for i in mass]
+        sp = self._read_file('/votes-history')
+        return [{'trans': i.find(class_='item__main').get_text(),
+                 'item': i.find(class_='item__main').find_next(class_='item__main').get_text(),
+                 'date': i.find(class_='item__tertiary').get_text()} for i in sp.find_all(class_='item')]
 
 
 class Photos(Zip):
@@ -250,10 +249,8 @@ class Photos(Zip):
         super().__init__(name)
 
     def get_photos(self):
-        sp = []
-        for i in self._get_paths_by_key('photos'):
-            sp.extend([i.groupdict() for i in re.finditer('src="(?P<Photo>.+)" ', self._read_file(i))])
-        return sp
+        return [{'url': j.get('src')} for i in self._get_paths_by_key('photos') for j in
+                self._read_file(i).find_all('img')]
 
 
 class Video(Zip):
@@ -261,10 +258,8 @@ class Video(Zip):
         super().__init__(name)
 
     def get_videos(self):
-        res = []
-        for i in self._get_paths_by_key('video-albums'):
-            res.extend([i.groupdict() for i in re.finditer('<a href="(?P<Video>.*)">\n', self._read_file(i))])
-        return res
+        return [{'video': j.find('a').get('href')} for i in self._get_paths_by_key('video-albums/') for j in
+                self._read_file(i).find_all(class_='item__main') if j.find('a')]
 
 
 class Profile(Zip):
@@ -272,59 +267,68 @@ class Profile(Zip):
         super().__init__(name)
 
     def get_blacklist(self):
-        mass = re.finditer(r"""href="(?P<Id>.+)" .*">(?P<Name>.+)</a></div>\n\s\s\n.*'>(?P<Date>.+)</div>""",
-                           self._read_file('blacklist'))
-        return self._date_corrector(mass)
+        return [{'id': i.find('a').get('href'),
+                 'name': i.find('a').get_text(),
+                 'date': i.find('div', class_='item__tertiary').get_text()}
+                for i in self._read_file('blacklist').find_all(class_='item')]
 
     def get_documents(self):
-        return [i.groupdict() for i in re.finditer('<a href="(?P<Document>.*)"', self._read_file('documents'))]
+        return [{'url': i.find('a').get('href'),
+                 'name': i.find('a').get_text(),
+                 'date': i.find('div', class_='item__tertiary').get_text()} for i in
+                self._read_file('documents').find_all(class_='item')]
 
     def get_emails(self):
-        return [i.groupdict() for i in re.finditer(r"main'>(?P<Email>\S+).*</div>", self._read_file('email-changes'))]
+        return [{'mail': i.find(class_='item__main').get_text(),
+                 'date': i.find(class_='item__tertiary').get_text()} for i in
+                self._read_file('email-changes').find_all(class_='item')]
 
     def get_requests(self):
-        return [i.groupdict() for i in
-                re.finditer('href="(?P<Id>.+)">(?P<Name>.*)</a><', self._read_file('friends-requests'))]
+        return [{'id': j.find('a').get('href'),
+                 'name': j.get_text(strip=True)} for i in self._get_paths_by_key('friends-requests') for j in
+                self._read_file(i).find_all(class_='item')]
 
     def get_friends(self):
-        return [i.groupdict() for i in
-                re.finditer('href="(?P<Id>.+)">(?P<Name>.*)</a><', self._read_file('friends0.html'))]
+        return [{'id': j.find('a').get('href'),
+                 'name': j.find(class_='item__main').get_text(),
+                 'date': j.find(class_='item__tertiary').get_text()} for i in
+                filter(lambda x: 'requests' not in x, self._get_paths_by_key('friends')) for j in
+                self._read_file(i).find_all(class_='item')]
 
     def get_names(self):
-        mass = re.finditer(
-            r"""main'>(?P<Result>\w+).+имени (?P<Prev>\w+ \w+) на (?P<Next>\w+ \w+)</div>\s+.+>(?P<Date>.+)</div>""",
-            self._read_file('name-changes'))
-        return self._date_corrector(mass)
+        names = set()
+        for i in self._read_file('name-changes').find_all(class_='item__main'):
+            names.update(re.findall('[А-ЯA-Z]\w+ [А-ЯA-Z]\w+', i.get_text()))
+        return [{'name': i} for i in names]
 
     def get_page_info(self):
-        mass = re.finditer(
-            r"""tertiary">(?P<Type>.+)(?:</div><div>|</div>\s{3}<div>(?:<a href="(?P<Id>.+) c.+ >)?)(?P<Value>.+)(?(Id)</a></div>|</div>)""",
-            self._read_file('page-info'))
-        return [i.groupdict() for i in mass]
+        return [{'category': i.find(class_='item__tertiary').get_text(),
+                 'answer': i.find('div').find_next('div').get_text().replace('\xa0', ' ') if i.find(
+                     class_='item__tertiary').get_text() != 'Фотография' else i.find('img').get('src')} for i in
+                self._read_file('page-info').find_all(class_='item')]
 
     def get_phones(self):
-        mass = re.finditer(r"main'>(?P<Result>\w+).+(?P<Number>\d{11}).+\n\s+.+'>(?P<Date>.+)</div>",
-                           self._read_file('phone-changes'))
-        return self._date_corrector(mass)
+        return [{'operation': i.find(class_='item__main').get_text(),
+                 'date': i.find(class_='item__tertiary').get_text()} for i in
+                self._read_file('phone-changes').find_all(class_='item')]
 
     def get_stories(self):
-        return re.findall('href="(.+)">vk', self._read_file('stories'))
+        return [{'url': i.find('a').get('href'),
+                 'date': i.find(class_='item__tertiary').get_text()} for i in
+                self._read_file('stories').find_all(class_='item')]
 
     def get_subs(self, filepath_or_name_or_all):
+        mass = [{'url': j.find('a').get('href'),
+                 'name': j.get_text()} for i in self._get_paths_by_key('subscriptions') for j in
+                self._read_file(i).find_all(class_='item__main')]
         if filepath_or_name_or_all.lower() != 'all':
             try:
                 with open(filepath_or_name_or_all, encoding='utf-8') as file:
                     file = [i.strip().lower() for i in file.readlines()]
-                    return [i.groupdict() for j in file for i in
-                            re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>',
-                                        self._read_file('subscriptions0.html'))
-                            if j in i.groupdict()['Name'].lower()]
+                    return [dct for dct in mass for rq in file if rq in dct['name'].lower()]
             except FileNotFoundError:
-                return [i.groupdict() for i in
-                        re.finditer('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
-                        if
-                        filepath_or_name_or_all.lower() in i.groupdict()['Name'].lower()]
-        return re.findall('href="(?P<Url>.+)">(?P<Name>.*)</a></div>', self._read_file('subscriptions0.html'))
+                return [dct for dct in mass if filepath_or_name_or_all.lower() in dct['name'].lower()]
+        return mass
 
 
 class Wall(Zip):
@@ -332,13 +336,7 @@ class Wall(Zip):
         super().__init__(name)
 
     def get_wall(self):
-        res = []
-        for i in self._get_paths_by_key('wall'):
-            res.extend([i.groupdict() for i in
-                        re.finditer('<a class="post__link fl_l" href="(?P<Url>.*)">', self._read_file(i))])
-        return res
-
-
-strt = time.perf_counter()
-ax = Messages(r'Z:\const\archive.zip', Users(r'Z:\const\archive.zip').get_every()).get_kd()
-print(ax, time.perf_counter() - strt)
+        return [{'item': j.find(class_='attachment__description').get_text(),
+                 'url': j.find(class_='attachment__link').get('href'),
+                 'wall': j.find(class_='post__link fl_l').get('href')} for i in self._get_paths_by_key('wall') for j in
+                self._read_file(i).find_all(class_='item') if j.find(class_='attachment__description')]
