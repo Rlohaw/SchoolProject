@@ -47,19 +47,20 @@ class ZipControl:
 
 while True:
     try:
-        archive = input("Archive: ")
+        archive = input('Archive: ')
         w = r'(\w+)'
-        with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='utf-8', newline='') as file:
+        with open(f"archive-{re.findall(rf'{w}.zip', archive)[0]}.csv", 'w', encoding='cp1251', newline='') as file:
             a = ZipControl(archive)
             res = a.start()
             for s in res:
                 s = '; '.join(map(lambda x: ': '.join(map(str, x)), s.items()))
                 print(s)
-            writer = csv.DictWriter(file, fieldnames=list(res[0].keys()) if isinstance(res, list) else list(res.keys()))
+            writer = csv.DictWriter(file, fieldnames=list(res[0].keys()) if isinstance(res, list) else list(res.keys()),
+                                    delimiter=';', quotechar=';')
             writer.writeheader()
             if isinstance(res, list):
                 [writer.writerow(i) for i in res]
             else:
                 writer.writerow(res)
     except Exception as e:
-        print(e)
+        print(f'No data: {e}')
